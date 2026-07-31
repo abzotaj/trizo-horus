@@ -29,7 +29,15 @@ const DEFAULT_IGNORE_DIRS = new Set([
   "vendor",
   ".venv",
   "__pycache__",
+  ".terraform",
+  ".terragrunt-cache",
 ])
+
+// Terraform state/plan/vars files routinely hold plaintext secrets and resource
+// attribute values (DB passwords, tokens, ...) pulled from providers -- unlike
+// the *.tf definitions themselves, they add no journey-mapping signal worth the
+// exposure of sending them to an external LLM API, so they're never read.
+const SENSITIVE_FILE_PATTERN = /\.(tfstate(\.backup)?|tfvars(\.json)?|tfplan)$/i
 
 const MAX_FILE_BYTES = 200_000
 const MAX_FILES_PER_REPO = 4000
@@ -55,7 +63,12 @@ export function resolveRepoInputs(inputs: string[]): RepoInput[] {
   })
 }
 
-/** Walks a repo directory, returning readable text files up to a size cap. */
+/**
+ * Walks a repo directory, returning readable text files up to a size cap.
+ * No extension filtering -- app code, Terraform (.tf/.tfvars.example), and
+ * shell/PowerShell (.sh/.ps1/.psm1) scripts are all included, except the
+ * sensitive Terraform artifacts excluded above.
+ */
 export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> {
   const files: RepoFile[] = []
 
@@ -72,6 +85,7 @@ export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> 
         continue
       }
       if (!entry.isFile()) continue
+      if (SENSITIVE_FILE_PATTERN.test(entry.name)) continue
       const stat = statSync(full)
       if (stat.size > MAX_FILE_BYTES) continue
       try {

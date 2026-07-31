@@ -1,4 +1,4 @@
-import type { LanguageModel } from "ai"
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 
 export type ProviderId = "anthropic" | "openai" | "google"
 
@@ -9,25 +9,27 @@ const DEFAULT_MODEL: Record<ProviderId, string> = {
 }
 
 /**
- * Resolves a CLI-selected provider/model pair to an `ai` SDK LanguageModel.
+ * Resolves a CLI-selected provider/model pair to a LangChain chat model.
  * Each provider package is imported lazily so a user only needs the API key
  * (and installed package) for the provider they actually picked.
  */
-export async function resolveModel(providerId: ProviderId, modelId?: string): Promise<LanguageModel> {
+export async function resolveModel(providerId: ProviderId, modelId?: string): Promise<BaseChatModel> {
   const model = modelId ?? DEFAULT_MODEL[providerId]
 
   switch (providerId) {
     case "anthropic": {
-      const { anthropic } = await import("@ai-sdk/anthropic")
-      return anthropic(model)
+      const { ChatAnthropic } = await import("@langchain/anthropic")
+      return new ChatAnthropic({ model })
     }
     case "openai": {
-      const { openai } = await import("@ai-sdk/openai")
-      return openai(model)
+      const { ChatOpenAI } = await import("@langchain/openai")
+      return new ChatOpenAI({ model })
     }
     case "google": {
-      const { google } = await import("@ai-sdk/google")
-      return google(model)
+      const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai")
+      // langchain's default env var is GOOGLE_API_KEY; kept GOOGLE_GENERATIVE_AI_API_KEY
+      // (matching .env.example) by passing it through explicitly instead of renaming.
+      return new ChatGoogleGenerativeAI({ model, apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
     }
     default:
       throw new Error(`Unknown provider: ${providerId satisfies never}`)

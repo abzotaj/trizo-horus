@@ -1,0 +1,49 @@
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
+import { Annotation, END, Send, START, StateGraph } from "@langchain/langgraph"
+import { correlateJourneys } from "./agents/correlator.js"
+import { surveyRepo } from "./agents/surveyor.js"
+import { loadRepoSnapshot, type RepoInput } from "./repo-intake/index.js"
+import type { Journey, RepoManifest } from "./types/journey.js"
+
+/**
+ * The scan pipeline as a LangGraph graph: a "survey" node is fanned out to
+ * run once per repo in parallel (via Send), and a single "correlate" node
+ * joins once every survey branch has finished.
+ */
+const ScanState = Annotation.Root({
+  repoInputs: Annotation<RepoInput[]>,
+  model: Annotation<BaseChatModel>,
+  manifests: Annotation<RepoManifest[]>({
+    reducer: (existing, update) => existing.concat(update),
+    default: () => [],
+  }),
+  journeys: Annotation<Journey[]>,
+})
+
+async function surveyNode(state: typeof ScanState.State) {
+  // Send() scopes repoInputs down to a single repo for this branch -- see dispatchSurveys.
+  const [repo] = state.repoInputs
+  const snapshot = await loadRepoSnapshot(repo)
+  console.log(`  ${repo.name}: ${snapshot.files.length} file(s) loaded`)
+  const manifest = await surveyRepo(state.model, snapshot)
+  return { manifests: [manifest] }
+}
+
+async function correlateNode(state: typeof ScanState.State) {
+  const journeys = await correlateJourneys(state.model, state.manifests)
+  return { journeys }
+}
+
+function dispatchSurveys(state: typeof ScanState.State) {
+  return state.repoInputs.map((repo) => new Send("survey", { repoInputs: [repo], model: state.model }))
+}
+
+export function buildScanGraph() {
+  return new StateGraph(ScanState)
+    .addNode("survey", surveyNode)
+    .addNode("correlate", correlateNode)
+    .addConditionalEdges(START, dispatchSurveys, ["survey"])
+    .addEdge("survey", "correlate")
+    .addEdge("correlate", END)
+    .compile()
+}

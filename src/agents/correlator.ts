@@ -1,12 +1,12 @@
-import type { LanguageModel } from "ai"
-import { generateObject } from "ai"
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
+import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { z } from "zod"
 import { Journey, type RepoManifest } from "../types/journey.js"
 
 const SYSTEM_PROMPT = `You are given the manifests produced by scanning several repositories independently. Each
 manifest lists the steps found in one repo (pages, api endpoints, services, db reads/writes,
-queues, external calls) and that repo's unresolvedCalls -- outbound calls whose destination
-lives in a repo other than the one that made them.
+queues, external calls, infra resources/scripts) and that repo's unresolvedCalls -- outbound
+calls whose destination lives in a repo other than the one that made them.
 
 Your job:
 1. Match each unresolvedCall to a step in ANOTHER repo's manifest (by endpoint/topic/method
@@ -22,13 +22,13 @@ Your job:
 4. Preserve every field already present on each step (confidence, sourceRef, etc.) verbatim --
    only add the edges you infer.`
 
-export async function correlateJourneys(model: LanguageModel, manifests: RepoManifest[]): Promise<Journey[]> {
-  const { object } = await generateObject({
-    model,
-    system: SYSTEM_PROMPT,
-    prompt: `Repo manifests:\n${JSON.stringify(manifests, null, 2)}`,
-    schema: z.object({ journeys: z.array(Journey) }),
-  })
+export async function correlateJourneys(model: BaseChatModel, manifests: RepoManifest[]): Promise<Journey[]> {
+  const structuredModel = model.withStructuredOutput(z.object({ journeys: z.array(Journey) }))
 
-  return object.journeys
+  const result = await structuredModel.invoke([
+    new SystemMessage(SYSTEM_PROMPT),
+    new HumanMessage(`Repo manifests:\n${JSON.stringify(manifests, null, 2)}`),
+  ])
+
+  return result.journeys
 }

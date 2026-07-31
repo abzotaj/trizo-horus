@@ -7,7 +7,7 @@ import { z } from "zod"
  * by an LLM reading source code rather than written by a human.
  */
 
-export const StepKind = z.enum(["page", "api", "service", "db", "queue", "external"])
+export const StepKind = z.enum(["page", "api", "service", "db", "queue", "external", "infra"])
 export type StepKind = z.infer<typeof StepKind>
 
 export const Confidence = z.enum(["low", "medium", "high"])
