@@ -17,6 +17,7 @@ export type RepoFile = {
 export type RepoSkipCounts = {
   asset: number
   sensitive: number
+  lockfile: number
   tooLarge: number
   unreadable: number
 }
@@ -69,6 +70,33 @@ function isSkippedAssetFile(name: string): boolean {
   const dot = name.lastIndexOf(".")
   return dot !== -1 && SKIPPED_ASSET_EXTENSIONS.has(name.slice(dot).toLowerCase())
 }
+
+// Package-manager lock files are large, auto-generated, and describe pinned
+// dependency versions/hashes -- no journey-mapping signal, and often big enough
+// on their own to eat into MAX_FILES_PER_REPO / MAX_FILE_BYTES budget for
+// nothing. Matched by exact filename since these names are fixed conventions,
+// not an extension family.
+const LOCK_FILE_NAMES = new Set([
+  "package-lock.json", // npm
+  "npm-shrinkwrap.json", // npm
+  "yarn.lock", // Yarn
+  "pnpm-lock.yaml", // pnpm
+  "bun.lock", // Bun
+  "bun.lockb", // Bun (binary)
+  "composer.lock", // PHP Composer
+  "Gemfile.lock", // Ruby Bundler
+  "Pipfile.lock", // Python pipenv
+  "poetry.lock", // Python Poetry
+  "uv.lock", // Python uv
+  "Cargo.lock", // Rust
+  "go.sum", // Go module checksums
+  "mix.lock", // Elixir
+  "Podfile.lock", // CocoaPods
+  "packages.lock.json", // NuGet
+  "paket.lock", // Paket (.NET)
+  "conda-lock.yml", // conda-lock
+  "flake.lock", // Nix flakes
+])
 
 const MAX_FILE_BYTES = 200_000
 const MAX_FILES_PER_REPO = 4000
@@ -141,13 +169,13 @@ function discoverReposInDir(dir: string): RepoInput[] {
  * Walks a repo directory, returning readable text files up to a size cap.
  * No extension filtering on code/config -- app code, Terraform
  * (.tf/.tfvars.example), and shell/PowerShell (.sh/.ps1/.psm1) scripts are
- * all included. Excluded: the sensitive Terraform artifacts above, and
- * binary document/video/audio/image/vector assets (see
- * SKIPPED_ASSET_EXTENSIONS).
+ * all included. Excluded: the sensitive Terraform artifacts above, binary
+ * document/video/audio/image/vector assets (see SKIPPED_ASSET_EXTENSIONS),
+ * and package-manager lock files (see LOCK_FILE_NAMES).
  */
 export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> {
   const files: RepoFile[] = []
-  const skipped: RepoSkipCounts = { asset: 0, sensitive: 0, tooLarge: 0, unreadable: 0 }
+  const skipped: RepoSkipCounts = { asset: 0, sensitive: 0, lockfile: 0, tooLarge: 0, unreadable: 0 }
   let truncated = false
 
   async function walk(dir: string) {
@@ -171,6 +199,10 @@ export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> 
       if (!entry.isFile()) continue
       if (SENSITIVE_FILE_PATTERN.test(entry.name)) {
         skipped.sensitive++
+        continue
+      }
+      if (LOCK_FILE_NAMES.has(entry.name)) {
+        skipped.lockfile++
         continue
       }
       if (isSkippedAssetFile(entry.name)) {

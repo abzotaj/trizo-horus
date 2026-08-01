@@ -114,18 +114,28 @@ text -- so without this filter these would silently burn prompt budget as noise 
 being skipped like a genuinely unreadable file. See `SKIPPED_ASSET_EXTENSIONS` in
 `src/repo-intake/index.ts` to adjust the list.
 
+Package-manager lock files are excluded by exact filename too: `package-lock.json` /
+`npm-shrinkwrap.json` / `yarn.lock` / `pnpm-lock.yaml` / `bun.lock(b)` (JS), `composer.lock`
+(PHP), `Gemfile.lock` (Ruby), `Pipfile.lock` / `poetry.lock` / `uv.lock` (Python), `Cargo.lock`
+(Rust), `go.sum` (Go), `mix.lock` (Elixir), `Podfile.lock` (CocoaPods), `packages.lock.json` /
+`paket.lock` (.NET), `conda-lock.yml`, `flake.lock` (Nix). These are large, auto-generated, and
+describe pinned dependency hashes -- no journey-mapping signal, and often big enough on their
+own to burn through the file-count/size budget for nothing. The manifest they lock (`package.json`,
+`Gemfile`, `Cargo.toml`, ...) is still read normally -- that's where the actual dependency/script
+signal lives. See `LOCK_FILE_NAMES` in `src/repo-intake/index.ts` to adjust the list.
+
 ### `MAX_FILES_PER_REPO` can mask what got excluded
 
 `loadRepoSnapshot` caps at 4000 included files per repo (`MAX_FILES_PER_REPO`). If a repo has
 more than 4000 eligible text files on its own, `files.length` reads exactly 4000 whether or not
 any media/sensitive files were excluded -- the cap is the bottleneck, not the exclusion filters.
 To make that visible instead of confusing, `RepoSnapshot` carries `skipped` (counts of files
-excluded as `asset`, `sensitive`, `tooLarge`, or `unreadable`) and `truncated` (true if the cap
-was hit, meaning some eligible files were never scanned at all). The per-repo scan log line
-prints both, e.g.:
+excluded as `asset`, `sensitive`, `lockfile`, `tooLarge`, or `unreadable`) and `truncated` (true
+if the cap was hit, meaning some eligible files were never scanned at all). The per-repo scan
+log line prints both, e.g.:
 
 ```
-acme-web: 4000 file(s) loaded (skipped 20 media, 0 sensitive, 3 too large, 0 unreadable) -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned
+acme-web: 4000 file(s) loaded (skipped 20 media, 0 sensitive, 1 lockfile, 3 too large, 0 unreadable) -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned
 ```
 
 If you see `truncated`, raise `MAX_FILES_PER_REPO` in `src/repo-intake/index.ts`, or narrow
