@@ -14,8 +14,18 @@ export type RepoFile = {
   content: string
 }
 
+export type RepoSkipCounts = {
+  asset: number
+  sensitive: number
+  tooLarge: number
+  unreadable: number
+}
+
 export type RepoSnapshot = RepoInput & {
   files: RepoFile[]
+  skipped: RepoSkipCounts
+  /** True if MAX_FILES_PER_REPO was hit -- files.length no longer reflects the repo's true size. */
+  truncated: boolean
 }
 
 const DEFAULT_IGNORE_DIRS = new Set([
@@ -137,12 +147,20 @@ function discoverReposInDir(dir: string): RepoInput[] {
  */
 export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> {
   const files: RepoFile[] = []
+  const skipped: RepoSkipCounts = { asset: 0, sensitive: 0, tooLarge: 0, unreadable: 0 }
+  let truncated = false
 
   async function walk(dir: string) {
-    if (files.length >= MAX_FILES_PER_REPO) return
+    if (files.length >= MAX_FILES_PER_REPO) {
+      truncated = true
+      return
+    }
     const entries = await readdir(dir, { withFileTypes: true })
     for (const entry of entries) {
-      if (files.length >= MAX_FILES_PER_REPO) return
+      if (files.length >= MAX_FILES_PER_REPO) {
+        truncated = true
+        return
+      }
       if (entry.name.startsWith(".") && entry.name !== ".env.example") continue
       const full = join(dir, entry.name)
       if (entry.isDirectory()) {
@@ -151,18 +169,28 @@ export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> 
         continue
       }
       if (!entry.isFile()) continue
-      if (SENSITIVE_FILE_PATTERN.test(entry.name) || isSkippedAssetFile(entry.name)) continue
+      if (SENSITIVE_FILE_PATTERN.test(entry.name)) {
+        skipped.sensitive++
+        continue
+      }
+      if (isSkippedAssetFile(entry.name)) {
+        skipped.asset++
+        continue
+      }
       const stat = statSync(full)
-      if (stat.size > MAX_FILE_BYTES) continue
+      if (stat.size > MAX_FILE_BYTES) {
+        skipped.tooLarge++
+        continue
+      }
       try {
         const content = await readFile(full, "utf8")
         files.push({ path: relative(input.path, full), content })
       } catch {
-        // Binary or unreadable file -- skip.
+        skipped.unreadable++
       }
     }
   }
 
   await walk(input.path)
-  return { ...input, files }
+  return { ...input, files, skipped, truncated }
 }

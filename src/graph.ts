@@ -32,7 +32,12 @@ async function surveyNode(state: typeof ScanState.State) {
   // Send() scopes repoInputs down to a single repo for this branch -- see dispatchSurveys.
   const [repo] = state.repoInputs
   const snapshot = await loadRepoSnapshot(repo)
-  console.log(`  ${repo.name}: ${snapshot.files.length} file(s) loaded`)
+  const { skipped, truncated } = snapshot
+  console.log(
+    `  ${repo.name}: ${snapshot.files.length} file(s) loaded` +
+      ` (skipped ${skipped.asset} media, ${skipped.sensitive} sensitive, ${skipped.tooLarge} too large, ${skipped.unreadable} unreadable)` +
+      (truncated ? " -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned" : ""),
+  )
   const { manifest, usage } = await surveyRepo(state.model, state.providerId, state.modelId, snapshot)
   return { manifests: [manifest], usage: [usage] }
 }
