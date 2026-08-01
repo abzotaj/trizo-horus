@@ -124,18 +124,31 @@ own to burn through the file-count/size budget for nothing. The manifest they lo
 `Gemfile`, `Cargo.toml`, ...) is still read normally -- that's where the actual dependency/script
 signal lives. See `LOCK_FILE_NAMES` in `src/repo-intake/index.ts` to adjust the list.
 
+Test and mock content is excluded too, since it documents how a handler is expected to behave
+rather than the handler itself, and roughly doubles file count for zero new journey steps.
+Whole directories are skipped by name (`TEST_MOCK_DIR_NAMES`): `test`, `tests`, `__tests__`,
+`__mocks__`, `__snapshots__`, `spec`, `specs`, `e2e`, `cypress`, `playwright-report`,
+`test-results`, `fixtures`, `testdata` (Go's own convention -- `go build` already ignores it).
+Co-located test files that sit next to the code they exercise (not caught by a directory rule)
+are matched by naming convention instead (`TEST_MOCK_FILE_PATTERN`): `*.test.ts`/`*.spec.js`/
+`*.mock.ts` (JS/TS), `*_test.go` (Go), `test_*.py`/`*_test.py` (Python), `*Test.java`/`*Spec.scala`/
+`*Tests.cs` (JVM/.NET), and Jest `.snap` snapshots. The extension allowlist on the naming-pattern
+half deliberately excludes `json`/`yaml`, so a real API spec file like `openapi.spec.json` is
+never caught by the "spec" convention meant for test files -- it's kept, since it's actual
+journey-mapping signal (the endpoints it documents).
+
 ### `MAX_FILES_PER_REPO` can mask what got excluded
 
 `loadRepoSnapshot` caps at 4000 included files per repo (`MAX_FILES_PER_REPO`). If a repo has
 more than 4000 eligible text files on its own, `files.length` reads exactly 4000 whether or not
 any media/sensitive files were excluded -- the cap is the bottleneck, not the exclusion filters.
 To make that visible instead of confusing, `RepoSnapshot` carries `skipped` (counts of files
-excluded as `asset`, `sensitive`, `lockfile`, `tooLarge`, or `unreadable`) and `truncated` (true
-if the cap was hit, meaning some eligible files were never scanned at all). The per-repo scan
-log line prints both, e.g.:
+excluded as `asset`, `sensitive`, `lockfile`, `testOrMock`, `tooLarge`, or `unreadable`) and
+`truncated` (true if the cap was hit, meaning some eligible files were never scanned at all).
+The per-repo scan log line prints both, e.g.:
 
 ```
-acme-web: 4000 file(s) loaded (skipped 20 media, 0 sensitive, 1 lockfile, 3 too large, 0 unreadable) -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned
+acme-web: 4000 file(s) loaded (skipped 20 media, 0 sensitive, 1 lockfile, 40 test/mock, 3 too large, 0 unreadable) -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned
 ```
 
 If you see `truncated`, raise `MAX_FILES_PER_REPO` in `src/repo-intake/index.ts`, or narrow

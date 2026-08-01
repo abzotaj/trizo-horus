@@ -18,6 +18,7 @@ export type RepoSkipCounts = {
   asset: number
   sensitive: number
   lockfile: number
+  testOrMock: number
   tooLarge: number
   unreadable: number
 }
@@ -42,6 +43,26 @@ const DEFAULT_IGNORE_DIRS = new Set([
   "__pycache__",
   ".terraform",
   ".terragrunt-cache",
+])
+
+// Test/mock content documents *how a handler is expected to behave*, not the
+// handler itself -- it multiplies file count roughly 1:1 with the app code it
+// exercises without adding a new step or edge to trace, so it's excluded like
+// the other noise categories above.
+const TEST_MOCK_DIR_NAMES = new Set([
+  "test",
+  "tests",
+  "__tests__",
+  "__mocks__",
+  "__snapshots__",
+  "spec",
+  "specs",
+  "e2e",
+  "cypress",
+  "playwright-report",
+  "test-results",
+  "fixtures",
+  "testdata", // Go's testdata/ convention: ignored by `go build` itself
 ])
 
 // Terraform state/plan/vars files routinely hold plaintext secrets and resource
@@ -97,6 +118,18 @@ const LOCK_FILE_NAMES = new Set([
   "conda-lock.yml", // conda-lock
   "flake.lock", // Nix flakes
 ])
+
+// Co-located test/mock files (not caught by TEST_MOCK_DIR_NAMES because they sit
+// next to the code they exercise, e.g. `foo.test.ts` beside `foo.ts`). The
+// extension allowlist on the separator-based part keeps this from swallowing
+// unrelated conventions that happen to contain "spec" -- e.g. `openapi.spec.json`
+// (an API spec, high-value signal) never matches since json/yaml aren't listed.
+const TEST_MOCK_FILE_PATTERN =
+  /[._-](test|tests|spec|specs|e2e|mock|mocks)\.(js|jsx|ts|tsx|mjs|cjs|py|rb|go)$|^test_.+\.py$|(Test|Tests|Spec|Mock)\.(java|kt|cs|scala)$|\.snap$/
+
+function isTestOrMockFile(name: string): boolean {
+  return TEST_MOCK_FILE_PATTERN.test(name)
+}
 
 const MAX_FILE_BYTES = 200_000
 const MAX_FILES_PER_REPO = 4000
@@ -171,11 +204,12 @@ function discoverReposInDir(dir: string): RepoInput[] {
  * (.tf/.tfvars.example), and shell/PowerShell (.sh/.ps1/.psm1) scripts are
  * all included. Excluded: the sensitive Terraform artifacts above, binary
  * document/video/audio/image/vector assets (see SKIPPED_ASSET_EXTENSIONS),
- * and package-manager lock files (see LOCK_FILE_NAMES).
+ * package-manager lock files (see LOCK_FILE_NAMES), and test/mock content
+ * (see TEST_MOCK_DIR_NAMES / TEST_MOCK_FILE_PATTERN).
  */
 export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> {
   const files: RepoFile[] = []
-  const skipped: RepoSkipCounts = { asset: 0, sensitive: 0, lockfile: 0, tooLarge: 0, unreadable: 0 }
+  const skipped: RepoSkipCounts = { asset: 0, sensitive: 0, lockfile: 0, testOrMock: 0, tooLarge: 0, unreadable: 0 }
   let truncated = false
 
   async function walk(dir: string) {
@@ -192,7 +226,7 @@ export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> 
       if (entry.name.startsWith(".") && entry.name !== ".env.example") continue
       const full = join(dir, entry.name)
       if (entry.isDirectory()) {
-        if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue
+        if (DEFAULT_IGNORE_DIRS.has(entry.name) || TEST_MOCK_DIR_NAMES.has(entry.name)) continue
         await walk(full)
         continue
       }
@@ -203,6 +237,10 @@ export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> 
       }
       if (LOCK_FILE_NAMES.has(entry.name)) {
         skipped.lockfile++
+        continue
+      }
+      if (isTestOrMockFile(entry.name)) {
+        skipped.testOrMock++
         continue
       }
       if (isSkippedAssetFile(entry.name)) {

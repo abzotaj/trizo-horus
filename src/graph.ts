@@ -35,7 +35,7 @@ async function surveyNode(state: typeof ScanState.State) {
   const { skipped, truncated } = snapshot
   console.log(
     `  ${repo.name}: ${snapshot.files.length} file(s) loaded` +
-      ` (skipped ${skipped.asset} media, ${skipped.sensitive} sensitive, ${skipped.lockfile} lockfile, ${skipped.tooLarge} too large, ${skipped.unreadable} unreadable)` +
+      ` (skipped ${skipped.asset} media, ${skipped.sensitive} sensitive, ${skipped.lockfile} lockfile, ${skipped.testOrMock} test/mock, ${skipped.tooLarge} too large, ${skipped.unreadable} unreadable)` +
       (truncated ? " -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned" : ""),
   )
   const { manifest, usage } = await surveyRepo(state.model, state.providerId, state.modelId, snapshot)
