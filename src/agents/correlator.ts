@@ -1,7 +1,9 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { z } from "zod"
+import type { ProviderId } from "../providers/index.js"
 import { Journey, type RepoManifest } from "../types/journey.js"
+import { recordUsage, type StepUsage } from "../usage.js"
 
 const SYSTEM_PROMPT = `You are given the manifests produced by scanning several repositories independently. Each
 manifest lists the steps found in one repo (pages, api endpoints, services, db reads/writes,
@@ -22,13 +24,19 @@ Your job:
 4. Preserve every field already present on each step (confidence, sourceRef, etc.) verbatim --
    only add the edges you infer.`
 
-export async function correlateJourneys(model: BaseChatModel, manifests: RepoManifest[]): Promise<Journey[]> {
-  const structuredModel = model.withStructuredOutput(z.object({ journeys: z.array(Journey) }))
+export async function correlateJourneys(
+  model: BaseChatModel,
+  providerId: ProviderId,
+  modelId: string,
+  manifests: RepoManifest[],
+): Promise<{ journeys: Journey[]; usage: StepUsage }> {
+  const structuredModel = model.withStructuredOutput(z.object({ journeys: z.array(Journey) }), { includeRaw: true })
 
-  const result = await structuredModel.invoke([
+  const { raw, parsed } = await structuredModel.invoke([
     new SystemMessage(SYSTEM_PROMPT),
     new HumanMessage(`Repo manifests:\n${JSON.stringify(manifests, null, 2)}`),
   ])
 
-  return result.journeys
+  const usage = recordUsage("correlate", providerId, modelId, raw)
+  return { journeys: parsed.journeys, usage }
 }

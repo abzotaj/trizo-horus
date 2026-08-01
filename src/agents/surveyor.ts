@@ -1,8 +1,10 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { z } from "zod"
+import type { ProviderId } from "../providers/index.js"
 import type { RepoSnapshot } from "../repo-intake/index.js"
 import { RepoManifest } from "../types/journey.js"
+import { recordUsage, type StepUsage } from "../usage.js"
 
 // Naive v1 cap on how much source text goes into a single prompt. Real
 // chunking (splitting a large repo across multiple surveyor calls and
@@ -41,7 +43,12 @@ allows.
 Only report what the code actually supports. Do not invent steps for typical patterns you'd
 expect but didn't see.`
 
-export async function surveyRepo(model: BaseChatModel, snapshot: RepoSnapshot): Promise<RepoManifest> {
+export async function surveyRepo(
+  model: BaseChatModel,
+  providerId: ProviderId,
+  modelId: string,
+  snapshot: RepoSnapshot,
+): Promise<{ manifest: RepoManifest; usage: StepUsage }> {
   const fileList = snapshot.files.map((f) => f.path).join("\n")
   let body = snapshot.files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n")
   if (body.length > MAX_PROMPT_CHARS) {
@@ -53,12 +60,15 @@ export async function surveyRepo(model: BaseChatModel, snapshot: RepoSnapshot): 
       steps: RepoManifest.shape.steps,
       unresolvedCalls: RepoManifest.shape.unresolvedCalls,
     }),
+    { includeRaw: true },
   )
 
-  const result = await structuredModel.invoke([
+  const { raw, parsed } = await structuredModel.invoke([
     new SystemMessage(SYSTEM_PROMPT),
     new HumanMessage(`Repository: ${snapshot.name}\n\nFile list:\n${fileList}\n\nFile contents:\n${body}`),
   ])
 
-  return RepoManifest.parse({ repo: snapshot.name, ...result })
+  const manifest = RepoManifest.parse({ repo: snapshot.name, ...parsed })
+  const usage = recordUsage(`survey:${snapshot.name}`, providerId, modelId, raw)
+  return { manifest, usage }
 }

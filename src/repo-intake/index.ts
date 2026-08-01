@@ -1,6 +1,6 @@
-import { existsSync, statSync } from "node:fs"
+import { existsSync, readdirSync, statSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
-import { join, relative } from "node:path"
+import { join, relative, resolve } from "node:path"
 
 export type RepoInput = {
   /** Short name used as the `repo` field on steps, e.g. "acme-api-gateway". */
@@ -42,11 +42,38 @@ const SENSITIVE_FILE_PATTERN = /\.(tfstate(\.backup)?|tfvars(\.json)?|tfplan)$/i
 const MAX_FILE_BYTES = 200_000
 const MAX_FILES_PER_REPO = 4000
 
+export type RepoSelection = {
+  /** Explicit repo paths, scanned individually. */
+  repos?: string[]
+  /** A parent folder holding multiple repos as immediate subdirectories -- every one is scanned. */
+  dir?: string
+  /** Repo names (matched against the resolved RepoInput.name) to exclude from the scan. */
+  skipRepos?: string[]
+}
+
 /**
- * Resolves the --repos CLI input to concrete local paths. GitHub sources
- * (owner/repo) are not implemented yet -- see README "Roadmap".
+ * Resolves --repos / --dir / --skipRepos to the concrete set of repos to scan.
+ * GitHub sources (owner/repo) are not implemented yet -- see README "Roadmap".
  */
-export function resolveRepoInputs(inputs: string[]): RepoInput[] {
+export function resolveRepoInputs(selection: RepoSelection): RepoInput[] {
+  if (!selection.repos?.length && !selection.dir) {
+    throw new Error("Provide --repos <paths...>, --dir <path>, or both.")
+  }
+
+  const byPath = new Map<string, RepoInput>()
+
+  for (const input of selection.dir ? discoverReposInDir(selection.dir) : []) {
+    byPath.set(input.path, input)
+  }
+  for (const input of resolveExplicitRepos(selection.repos ?? [])) {
+    byPath.set(input.path, input)
+  }
+
+  const skip = new Set(selection.skipRepos ?? [])
+  return Array.from(byPath.values()).filter((input) => !skip.has(input.name))
+}
+
+function resolveExplicitRepos(inputs: string[]): RepoInput[] {
   return inputs.map((raw) => {
     if (!existsSync(raw)) {
       throw new Error(
@@ -58,9 +85,25 @@ export function resolveRepoInputs(inputs: string[]): RepoInput[] {
     if (!stat.isDirectory()) {
       throw new Error(`Repo path is not a directory: "${raw}"`)
     }
-    const name = raw.replace(/\/+$/, "").split("/").pop() ?? raw
-    return { name, path: raw }
+    const path = resolve(raw)
+    const name = path.split("/").pop() ?? path
+    return { name, path }
   })
+}
+
+/** Treats every immediate subdirectory of `dir` as one repo. */
+function discoverReposInDir(dir: string): RepoInput[] {
+  if (!existsSync(dir)) {
+    throw new Error(`--dir not found: "${dir}"`)
+  }
+  if (!statSync(dir).isDirectory()) {
+    throw new Error(`--dir is not a directory: "${dir}"`)
+  }
+
+  const root = resolve(dir)
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => ({ name: entry.name, path: join(root, entry.name) }))
 }
 
 /**

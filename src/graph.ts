@@ -2,8 +2,10 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { Annotation, END, Send, START, StateGraph } from "@langchain/langgraph"
 import { correlateJourneys } from "./agents/correlator.js"
 import { surveyRepo } from "./agents/surveyor.js"
+import type { ProviderId } from "./providers/index.js"
 import { loadRepoSnapshot, type RepoInput } from "./repo-intake/index.js"
 import type { Journey, RepoManifest } from "./types/journey.js"
+import type { StepUsage } from "./usage.js"
 
 /**
  * The scan pipeline as a LangGraph graph: a "survey" node is fanned out to
@@ -13,7 +15,13 @@ import type { Journey, RepoManifest } from "./types/journey.js"
 const ScanState = Annotation.Root({
   repoInputs: Annotation<RepoInput[]>,
   model: Annotation<BaseChatModel>,
+  providerId: Annotation<ProviderId>,
+  modelId: Annotation<string>,
   manifests: Annotation<RepoManifest[]>({
+    reducer: (existing, update) => existing.concat(update),
+    default: () => [],
+  }),
+  usage: Annotation<StepUsage[]>({
     reducer: (existing, update) => existing.concat(update),
     default: () => [],
   }),
@@ -25,17 +33,20 @@ async function surveyNode(state: typeof ScanState.State) {
   const [repo] = state.repoInputs
   const snapshot = await loadRepoSnapshot(repo)
   console.log(`  ${repo.name}: ${snapshot.files.length} file(s) loaded`)
-  const manifest = await surveyRepo(state.model, snapshot)
-  return { manifests: [manifest] }
+  const { manifest, usage } = await surveyRepo(state.model, state.providerId, state.modelId, snapshot)
+  return { manifests: [manifest], usage: [usage] }
 }
 
 async function correlateNode(state: typeof ScanState.State) {
-  const journeys = await correlateJourneys(state.model, state.manifests)
-  return { journeys }
+  const { journeys, usage } = await correlateJourneys(state.model, state.providerId, state.modelId, state.manifests)
+  return { journeys, usage: [usage] }
 }
 
 function dispatchSurveys(state: typeof ScanState.State) {
-  return state.repoInputs.map((repo) => new Send("survey", { repoInputs: [repo], model: state.model }))
+  return state.repoInputs.map(
+    (repo) =>
+      new Send("survey", { repoInputs: [repo], model: state.model, providerId: state.providerId, modelId: state.modelId }),
+  )
 }
 
 export function buildScanGraph() {

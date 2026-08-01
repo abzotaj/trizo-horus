@@ -8,13 +8,24 @@ to render.
 ## Pipeline
 
 ```
+# individual repos
 trizo-horus scan --repos ./repo-a ./repo-b ./repo-c --provider anthropic --out ./output
+
+# every repo under a parent folder, skipping a couple by name
+trizo-horus scan --dir ./all-repos --skipRepos legacy-monolith archived-service --out ./output
+
+# both at once (deduped by path)
+trizo-horus scan --dir ./all-repos --repos ../elsewhere/extra-repo --out ./output
 ```
 
-1. **Repo intake** (`src/repo-intake`) -- resolves `--repos` to local filesystem paths and
-   walks each one into a `RepoSnapshot` (file list + contents, skipping `node_modules`,
-   `.git`, build output, etc.). GitHub sources (`--repos owner/repo`, cloned automatically)
-   are on the roadmap, not implemented yet -- clone locally first.
+1. **Repo intake** (`src/repo-intake`) -- resolves `--repos` and/or `--dir` to local
+   filesystem paths, then walks each one into a `RepoSnapshot` (file list + contents,
+   skipping `node_modules`, `.git`, build output, etc.). `--dir <path>` treats every
+   immediate subdirectory of `<path>` as one repo -- the common case when all your repos
+   live under one parent folder; `--skipRepos <names...>` excludes repos by directory name
+   from either source. `--repos` and `--dir` can be combined (deduped by resolved path); at
+   least one of the two is required. GitHub sources (`--repos owner/repo`, cloned
+   automatically) are on the roadmap, not implemented yet -- clone locally first.
 
 2. **Surveyor agents** (`src/agents/surveyor.ts`) -- one per repo, fanned out **in parallel**
    by the LangGraph graph in `src/graph.ts`. Each surveyor only sees its own repo and
@@ -94,6 +105,25 @@ providers, and sending that to an external LLM API would be a real exposure for 
 journey-mapping benefit (the `.tf` definitions already describe the resource shape). The
 `.terraform/` and `.terragrunt-cache/` provider-plugin/cache directories are skipped too.
 
+## Token usage and cost
+
+Every LLM call in the pipeline -- one per repo surveyed, plus one for the correlator -- is
+tracked as a `StepUsage` record (`src/usage.ts`): input/output/total tokens, plus an estimated
+USD cost. Each survey call's usage is captured via LangChain's `includeRaw: true` on
+`withStructuredOutput`, which returns the underlying `AIMessage.usage_metadata` alongside the
+parsed result; the correlator call is tracked the same way.
+
+- Printed as a table after every `scan` run, with a grand total.
+- Persisted to `output/usage.json` (`{ steps, totalTokens, totalCostUsd }`) alongside the
+  journey data, so cost is part of the scan's record, not just console output.
+- Pricing (`src/pricing.ts`) is hardcoded for the Anthropic models this project targets by
+  default (Opus 5, Sonnet 5, Haiku 4.5, Fable 5) and accurate as of this file's last update --
+  verify against current Anthropic pricing before relying on it for billing. OpenAI/Google
+  pricing is intentionally left unset (`costUsd: null`, surfaced as "unknown") rather than
+  hardcoding numbers this project has no live source for and that would silently go stale --
+  fill in `EXTRA_PRICING` in `src/pricing.ts` with current rates to get real cost estimates for
+  those providers.
+
 ## Status
 
 This is the initial scaffold: schema, repo intake, output writer, and the surveyor/correlator
@@ -113,5 +143,5 @@ once real output can be reviewed.
 ```bash
 npm install
 cp .env.example .env   # fill in the key for the provider you plan to use
-npm run scan -- --repos /path/to/repo-a /path/to/repo-b --provider anthropic --out ./output
+npm run scan -- --dir /path/to/all-repos --skipRepos legacy-service --provider anthropic --out ./output
 ```
