@@ -39,6 +39,27 @@ const DEFAULT_IGNORE_DIRS = new Set([
 // exposure of sending them to an external LLM API, so they're never read.
 const SENSITIVE_FILE_PATTERN = /\.(tfstate(\.backup)?|tfvars(\.json)?|tfplan)$/i
 
+// Binary media/asset files carry no journey-mapping signal, but reading them as
+// "utf8" never throws (Node just decodes the bytes, garbled) -- without this
+// filter they'd silently burn prompt budget as noise instead of being skipped
+// like a genuinely unreadable file.
+const DOCUMENT_EXTENSIONS = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf"]
+const VIDEO_EXTENSIONS = ["mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "m4v", "mpg", "mpeg"]
+const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"]
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "ico", "heic", "heif"]
+const VECTOR_EXTENSIONS = ["svg", "ai", "eps", "sketch", "fig", "xd", "indd"]
+
+const SKIPPED_ASSET_EXTENSIONS = new Set(
+  [...DOCUMENT_EXTENSIONS, ...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS, ...IMAGE_EXTENSIONS, ...VECTOR_EXTENSIONS].map(
+    (ext) => `.${ext}`,
+  ),
+)
+
+function isSkippedAssetFile(name: string): boolean {
+  const dot = name.lastIndexOf(".")
+  return dot !== -1 && SKIPPED_ASSET_EXTENSIONS.has(name.slice(dot).toLowerCase())
+}
+
 const MAX_FILE_BYTES = 200_000
 const MAX_FILES_PER_REPO = 4000
 
@@ -108,9 +129,11 @@ function discoverReposInDir(dir: string): RepoInput[] {
 
 /**
  * Walks a repo directory, returning readable text files up to a size cap.
- * No extension filtering -- app code, Terraform (.tf/.tfvars.example), and
- * shell/PowerShell (.sh/.ps1/.psm1) scripts are all included, except the
- * sensitive Terraform artifacts excluded above.
+ * No extension filtering on code/config -- app code, Terraform
+ * (.tf/.tfvars.example), and shell/PowerShell (.sh/.ps1/.psm1) scripts are
+ * all included. Excluded: the sensitive Terraform artifacts above, and
+ * binary document/video/audio/image/vector assets (see
+ * SKIPPED_ASSET_EXTENSIONS).
  */
 export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> {
   const files: RepoFile[] = []
@@ -128,7 +151,7 @@ export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> 
         continue
       }
       if (!entry.isFile()) continue
-      if (SENSITIVE_FILE_PATTERN.test(entry.name)) continue
+      if (SENSITIVE_FILE_PATTERN.test(entry.name) || isSkippedAssetFile(entry.name)) continue
       const stat = statSync(full)
       if (stat.size > MAX_FILE_BYTES) continue
       try {

@@ -105,6 +105,15 @@ providers, and sending that to an external LLM API would be a real exposure for 
 journey-mapping benefit (the `.tf` definitions already describe the resource shape). The
 `.terraform/` and `.terragrunt-cache/` provider-plugin/cache directories are skipped too.
 
+Binary media/design assets are excluded too, by extension, regardless of size: documents (pdf,
+doc/docx, xls/xlsx, ppt/pptx, odt/ods/odp, rtf), video (mp4, mov, avi, mkv, webm, flv, wmv, m4v,
+mpg/mpeg), audio (mp3, wav, flac, ogg, m4a, aac, wma), images (png, jpg/jpeg, gif, bmp, tiff/tif,
+webp, ico, heic/heif), and vector/design files (svg, ai, eps, sketch, fig, xd, indd). Reading a
+file as `utf8` never throws even on binary content -- Node just decodes the bytes into garbled
+text -- so without this filter these would silently burn prompt budget as noise rather than
+being skipped like a genuinely unreadable file. See `SKIPPED_ASSET_EXTENSIONS` in
+`src/repo-intake/index.ts` to adjust the list.
+
 ## Token usage and cost
 
 Every LLM call in the pipeline -- one per repo surveyed, plus one for the correlator -- is
