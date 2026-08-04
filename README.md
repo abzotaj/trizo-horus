@@ -93,6 +93,39 @@ uniformly across providers. Currently wired: `anthropic` (`@langchain/anthropic`
 (`@langchain/openai`), `google` (`@langchain/google-genai`). Select with `--provider` and
 optionally `--model`; the corresponding `*_API_KEY` env var must be set (see `.env.example`).
 
+### Cheap and local models via `--provider openai-compatible`
+
+Local runtimes (Ollama, LM Studio, vLLM, llama.cpp's server, LocalAI) and cheap hosted
+providers (Groq, DeepSeek, OpenRouter, Together, Fireworks, Mistral's API) all speak the same
+OpenAI chat-completions wire format. Rather than adding a provider class per tool, `openai-compatible`
+points `ChatOpenAI` at any of them via a custom `--base-url`:
+
+```bash
+# Ollama (local) -- pull a model first: ollama pull llama3.1
+trizo-horus scan --repos ./repo-a --provider openai-compatible \
+  --base-url http://localhost:11434/v1 --model llama3.1
+
+# LM Studio (local) -- start its local server first
+trizo-horus scan --repos ./repo-a --provider openai-compatible \
+  --base-url http://localhost:1234/v1 --model <model-loaded-in-lm-studio>
+
+# Groq (cheap, hosted)
+trizo-horus scan --repos ./repo-a --provider openai-compatible \
+  --base-url https://api.groq.com/openai/v1 --model llama-3.3-70b-versatile \
+  --api-key "$GROQ_API_KEY"
+```
+
+`--model` and `--base-url` are both required -- there's no sensible universal default model for
+an arbitrary endpoint. `--api-key` (or `OPENAI_COMPATIBLE_API_KEY`) is optional; most local
+servers ignore it, but a placeholder is sent regardless since the OpenAI SDK requires a
+non-empty string to construct the client.
+
+**Tradeoff to know before relying on this for real scans:** the whole surveyor/correlator
+pipeline depends on `.withStructuredOutput()` reliably filling a nested schema
+(`RepoManifest.steps[]`, `unresolvedCalls[]`, ...). Small/local models (roughly 7B–8B and below)
+are noticeably worse at this than Claude/GPT/Gemini -- expect more malformed or truncated JSON,
+missed steps, and silent retries. Worth a small test repo before trusting it on something large.
+
 ## Repo file coverage
 
 `src/repo-intake` reads every text file in a repo regardless of extension -- application code,

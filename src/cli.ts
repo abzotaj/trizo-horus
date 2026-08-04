@@ -22,8 +22,14 @@ program
   .option("--repos <paths...>", "local filesystem paths to individual repos to scan")
   .option("--dir <path>", "a folder holding multiple repos as immediate subdirectories -- every one is scanned")
   .option("--skipRepos <names...>", "repo names to exclude from the scan (matched against each repo's directory name)")
-  .option("--provider <provider>", "anthropic | openai | google", "anthropic")
-  .option("--model <model>", "override the provider's default model")
+  .option("--provider <provider>", "anthropic | openai | google | openai-compatible", "anthropic")
+  .option("--model <model>", "override the provider's default model (required for openai-compatible)")
+  .option(
+    "--base-url <url>",
+    "OpenAI-compatible endpoint for --provider openai-compatible, e.g. http://localhost:11434/v1 (Ollama), " +
+      "https://api.groq.com/openai/v1 (Groq)",
+  )
+  .option("--api-key <key>", "API key for --provider openai-compatible (most local servers ignore it)")
   .option("--out <dir>", "output directory", "./output")
   .action(
     async (opts: {
@@ -32,10 +38,15 @@ program
       skipRepos?: string[]
       provider: ProviderId
       model?: string
+      baseUrl?: string
+      apiKey?: string
       out: string
     }) => {
       const inputs = resolveRepoInputs({ repos: opts.repos, dir: opts.dir, skipRepos: opts.skipRepos })
-      const { model, providerId, modelId } = await resolveModel(opts.provider, opts.model)
+      const { model, providerId, modelId } = await resolveModel(opts.provider, opts.model, {
+        baseUrl: opts.baseUrl,
+        apiKey: opts.apiKey,
+      })
 
       console.log(`Surveying ${inputs.length} repo(s) in parallel with ${providerId}:${modelId}...`)
       const scan = buildScanGraph()
