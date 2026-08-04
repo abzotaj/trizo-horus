@@ -55,16 +55,16 @@ export async function resolveModel(
 
   switch (providerId) {
     case "anthropic": {
-      return { model: new ChatAnthropic({ model: resolvedModelId, apiKey: process.env.ANTHROPIC_API_KEY || '***REMOVED-LEAKED-ANTHROPIC-KEY***' }), providerId, modelId: resolvedModelId }
+      return { model: new ChatAnthropic({ model: resolvedModelId, apiKey: process.env.ANTHROPIC_API_KEY}), providerId, modelId: resolvedModelId }
     }
     case "openai": {
-      return { model: new ChatOpenAI({ model: resolvedModelId, apiKey: process.env.OPENAI_API_KEY || '***REMOVED-LEAKED-OPENAI-KEY***' }), providerId, modelId: resolvedModelId }
+      return { model: new ChatOpenAI({ model: resolvedModelId, apiKey: process.env.OPENAI_API_KEY}), providerId, modelId: resolvedModelId }
     }
     case "google": {
       // langchain's default env var is GOOGLE_API_KEY; kept GOOGLE_GENERATIVE_AI_API_KEY
       // (matching .env.example) by passing it through explicitly instead of renaming.
       return {
-        model: new ChatGoogleGenerativeAI({ model: resolvedModelId, apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '***REMOVED-LEAKED-OPENAI-KEY***' }),
+        model: new ChatGoogleGenerativeAI({ model: resolvedModelId, apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY}),
         providerId,
         modelId: resolvedModelId,
       }
