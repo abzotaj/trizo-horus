@@ -1,11 +1,11 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { Annotation, END, Send, START, StateGraph } from "@langchain/langgraph"
-import { correlateJourneys } from "./agents/correlator.js"
-import { surveyRepo } from "./agents/surveyor.js"
-import type { ProviderId } from "./providers/index.js"
-import { loadRepoSnapshot, type RepoInput } from "./repo-intake/index.js"
-import type { Journey, RepoManifest } from "./types/journey.js"
-import type { StepUsage } from "./usage.js"
+import { correlateJourneys } from "./agents/correlator"
+import { surveyRepo } from "./agents/surveyor"
+import type { ProviderId } from "./providers"
+import { loadRepoSnapshot, type RepoInput } from "./repo-intake"
+import type { Journey, RepoManifest } from "./types/journey"
+import type { StepUsage } from "./usage"
 
 /**
  * The scan pipeline as a LangGraph graph: a "survey" node is fanned out to
@@ -54,12 +54,11 @@ function dispatchSurveys(state: typeof ScanState.State) {
   )
 }
 
-export function buildScanGraph() {
-  return new StateGraph(ScanState)
+export const graph =  new StateGraph(ScanState)
     .addNode("survey", surveyNode)
     .addNode("correlate", correlateNode)
     .addConditionalEdges(START, dispatchSurveys, ["survey"])
     .addEdge("survey", "correlate")
     .addEdge("correlate", END)
-    .compile()
-}
+    .compile();
+graph.name = "TrizoHorus";

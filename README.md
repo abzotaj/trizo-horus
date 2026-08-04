@@ -196,7 +196,7 @@ USD cost. Each survey call's usage is captured via LangChain's `includeRaw: true
 parsed result; the correlator call is tracked the same way.
 
 - Printed as a table after every `scan` run, with a grand total.
-- Persisted to `output/usage.json` (`{ steps, totalTokens, totalCostUsd }`) alongside the
+- Persisted to `output-open-ai/usage.json` (`{ steps, totalTokens, totalCostUsd }`) alongside the
   journey data, so cost is part of the scan's record, not just console output.
 - Pricing (`src/pricing.ts`) is hardcoded for the Anthropic models this project targets by
   default (Opus 5, Sonnet 5, Haiku 4.5, Fable 5) and accurate as of this file's last update --
@@ -225,5 +225,5 @@ once real output can be reviewed.
 ```bash
 npm install
 cp .env.example .env   # fill in the key for the provider you plan to use
-npm run scan -- --dir /path/to/all-repos --skipRepos legacy-service --provider anthropic --out ./output
+npm run scan -- --dir /path/to/all-repos --skipRepos legacy-service --provider anthropic --out ./output-open-ai
 ```

@@ -1,10 +1,10 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { z } from "zod"
-import type { ProviderId } from "../providers/index.js"
-import type { RepoSnapshot } from "../repo-intake/index.js"
-import { RepoManifest } from "../types/journey.js"
-import { recordUsage, type StepUsage } from "../usage.js"
+import type { ProviderId } from "../providers"
+import type { RepoSnapshot } from "../repo-intake"
+import { RepoManifest } from "../types/journey"
+import { recordUsage, type StepUsage } from "../usage"
 
 // Naive v1 cap on how much source text goes into a single prompt. Real
 // chunking (splitting a large repo across multiple surveyor calls and

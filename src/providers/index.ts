@@ -1,4 +1,8 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
+import { ChatAnthropic}  from "@langchain/anthropic";
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { config } from "dotenv"
 
 export type ProviderId = "anthropic" | "openai" | "google" | "openai-compatible"
 
@@ -40,26 +44,27 @@ export async function resolveModel(
   modelId?: string,
   options: ResolveModelOptions = {},
 ): Promise<ResolvedModel> {
-  const resolvedModelId = modelId ?? DEFAULT_MODEL[providerId]
+  console.log({providerId, modelId})
+  const resolvedModelId = modelId ?? DEFAULT_MODEL[providerId];
+  config();
+  console.log({env: process.env});
   if (!resolvedModelId) {
     throw new Error(`--model is required for provider "${providerId}" -- there's no default model for a custom endpoint.`)
   }
 
+
   switch (providerId) {
     case "anthropic": {
-      const { ChatAnthropic } = await import("@langchain/anthropic")
-      return { model: new ChatAnthropic({ model: resolvedModelId }), providerId, modelId: resolvedModelId }
+      return { model: new ChatAnthropic({ model: resolvedModelId, apiKey: process.env.ANTHROPIC_API_KEY || '***REMOVED-LEAKED-ANTHROPIC-KEY***' }), providerId, modelId: resolvedModelId }
     }
     case "openai": {
-      const { ChatOpenAI } = await import("@langchain/openai")
-      return { model: new ChatOpenAI({ model: resolvedModelId }), providerId, modelId: resolvedModelId }
+      return { model: new ChatOpenAI({ model: resolvedModelId, apiKey: process.env.OPENAI_API_KEY || '***REMOVED-LEAKED-OPENAI-KEY***' }), providerId, modelId: resolvedModelId }
     }
     case "google": {
-      const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai")
       // langchain's default env var is GOOGLE_API_KEY; kept GOOGLE_GENERATIVE_AI_API_KEY
       // (matching .env.example) by passing it through explicitly instead of renaming.
       return {
-        model: new ChatGoogleGenerativeAI({ model: resolvedModelId, apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY }),
+        model: new ChatGoogleGenerativeAI({ model: resolvedModelId, apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '***REMOVED-LEAKED-OPENAI-KEY***' }),
         providerId,
         modelId: resolvedModelId,
       }
@@ -72,7 +77,6 @@ export async function resolveModel(
             `https://api.groq.com/openai/v1 for Groq).`,
         )
       }
-      const { ChatOpenAI } = await import("@langchain/openai")
       return {
         model: new ChatOpenAI({
           model: resolvedModelId,

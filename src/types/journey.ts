@@ -29,14 +29,14 @@ export const Step = z.object({
   kind: StepKind,
   label: z.string(),
   file: z.string(),
-  sourceRef: SourceRef.optional(),
+  sourceRef: SourceRef.optional().nullable(),
   confidence: Confidence,
-  tech: z.string().optional(),
-  endpoint: z.string().optional(),
-  datastore: z.string().optional(),
-  tables: z.array(z.string()).optional(),
-  vendor: z.string().optional(),
-  notes: z.string().optional(),
+  tech: z.string().optional().nullable(),
+  endpoint: z.string().optional().nullable(),
+  datastore: z.string().optional().nullable(),
+  tables: z.array(z.string()).optional().nullable(),
+  vendor: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
 })
 export type Step = z.infer<typeof Step>
 
@@ -83,7 +83,7 @@ export const ScanMeta = z.object({
 })
 export type ScanMeta = z.infer<typeof ScanMeta>
 
-/** output/index.json */
+/** output-open-ai/index.json */
 export const ScanIndex = z.object({
   meta: ScanMeta,
   journeys: z.array(JourneySummary),

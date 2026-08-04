@@ -131,8 +131,8 @@ function isTestOrMockFile(name: string): boolean {
   return TEST_MOCK_FILE_PATTERN.test(name)
 }
 
-const MAX_FILE_BYTES = 200_000
-const MAX_FILES_PER_REPO = 4000
+const MAX_FILE_BYTES = 300_000
+const MAX_FILES_PER_REPO = 5000
 
 export type RepoSelection = {
   /** Explicit repo paths, scanned individually. */
@@ -161,7 +161,8 @@ export function resolveRepoInputs(selection: RepoSelection): RepoInput[] {
     byPath.set(input.path, input)
   }
 
-  const skip = new Set(selection.skipRepos ?? [])
+  const skip = new Set(selection.skipRepos ?? []);
+  console.log({skip});
   return Array.from(byPath.values()).filter((input) => !skip.has(input.name))
 }
 

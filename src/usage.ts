@@ -1,5 +1,5 @@
 import type { AIMessage, BaseMessage } from "@langchain/core/messages"
-import { estimateCostUsd } from "./pricing.js"
+import { estimateCostUsd } from "./pricing"
 
 export type StepUsage = {
   step: string
@@ -11,7 +11,7 @@ export type StepUsage = {
   costUsd: number | null
 }
 
-/** Builds a StepUsage record from a structured-output call's raw AIMessage (includeRaw: true). */
+/** Builds a StepUsage record from a structured-output-open-ai call's raw AIMessage (includeRaw: true). */
 export function recordUsage(step: string, provider: string, model: string, raw: BaseMessage): StepUsage {
   const usage = (raw as AIMessage).usage_metadata
   const inputTokens = usage?.input_tokens ?? 0
