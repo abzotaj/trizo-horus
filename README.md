@@ -196,7 +196,7 @@ USD cost. Each survey call's usage is captured via LangChain's `includeRaw: true
 parsed result; the correlator call is tracked the same way.
 
 - Printed as a table after every `scan` run, with a grand total.
-- Persisted to `output-open-ai/usage.json` (`{ steps, totalTokens, totalCostUsd }`) alongside the
+- Persisted to `output/usage.json` (`{ steps, totalTokens, totalCostUsd }`) alongside the
   journey data, so cost is part of the scan's record, not just console output.
 - Pricing (`src/pricing.ts`) is hardcoded for the Anthropic models this project targets by
   default (Opus 5, Sonnet 5, Haiku 4.5, Fable 5) and accurate as of this file's last update --
@@ -225,5 +225,38 @@ once real output can be reviewed.
 ```bash
 npm install
 cp .env.example .env   # fill in the key for the provider you plan to use
-npm run scan -- --dir /path/to/all-repos --skipRepos legacy-service --provider anthropic --out ./output-open-ai
+npm run scan -- --dir /path/to/all-repos --skipRepos legacy-service --provider anthropic --out ./output
+```
+
+## Debugging in LangGraph Studio
+
+`langgraph.json` points the LangGraph CLI at `src/graph.ts`'s compiled `graph` export, so the
+pipeline can run and be inspected outside the CLI too -- step through the survey/correlate
+nodes one at a time, replay a run, inspect the exact state at each step.
+
+```bash
+npm run studio
+```
+
+This starts a local LangGraph API server (`langgraphjs dev`, from the `@langchain/langgraph-cli`
+dev dependency) and prints a Studio URL (`https://smith.langchain.com/studio?baseUrl=...`) that
+renders it in the browser -- no LangSmith account or network access required, everything runs
+locally. Loads env vars from `.env`, same as the CLI.
+
+The state schema Studio shows you for a new run is intentionally plain data --
+`repoInputs`/`providerId`/`modelId`/`baseUrl` -- not a constructed LangChain model object,
+since Studio invokes the graph over HTTP with JSON and can't serialize a live client instance.
+Each node resolves its own model from those strings via `resolveModel()` (see
+`src/providers/index.ts`); this is also why `--api-key`/API keys never appear in graph state --
+they stay in env vars so they never show up in a Studio trace. A run through Studio needs the
+same env vars as the CLI (`ANTHROPIC_API_KEY`, etc.) -- set them in `.env` first.
+
+Example input to paste into a new Studio run (adjust the path to a real local repo):
+
+```json
+{
+  "repoInputs": [{ "name": "my-repo", "path": "/absolute/path/to/my-repo" }],
+  "providerId": "anthropic",
+  "modelId": "claude-sonnet-5"
+}
 ```

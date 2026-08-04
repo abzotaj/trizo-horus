@@ -1,9 +1,9 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { z } from "zod"
-import type { ProviderId } from "../providers"
-import { Journey, type RepoManifest } from "../types/journey"
-import { recordUsage, type StepUsage } from "../usage"
+import type { ProviderId } from "../providers/index.js"
+import { Journey, type RepoManifest } from "../types/journey.js"
+import { recordUsage, type StepUsage } from "../usage.js"
 
 const SYSTEM_PROMPT = `You are given the manifests produced by scanning several repositories independently. Each
 manifest lists the steps found in one repo (pages, api endpoints, services, db reads/writes,

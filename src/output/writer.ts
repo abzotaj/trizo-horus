@@ -1,13 +1,13 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import type { Journey, JourneySummary, ScanIndex, ScanMeta } from "../types/journey"
-import type { StepUsage } from "../usage"
-import { journeyRepos } from "./journey-utils"
+import type { Journey, JourneySummary, ScanIndex, ScanMeta } from "../types/journey.js"
+import type { StepUsage } from "../usage.js"
+import { journeyRepos } from "./journey-utils.js"
 
 /**
- * Splits scan output-open-ai across files instead of one large JSON blob:
- *   output-open-ai/index.json          -- meta + lightweight JourneySummary[]
- *   output-open-ai/journeys/<id>.json  -- one full Journey per file
+ * Splits scan output across files instead of one large JSON blob:
+ *   output/index.json          -- meta + lightweight JourneySummary[]
+ *   output/journeys/<id>.json  -- one full Journey per file
  *
  * A single combined file grows unbounded with every repo/journey added and
  * risks crossing the ~1MB range for large scans. Per-journey files keep each

@@ -83,7 +83,7 @@ export const ScanMeta = z.object({
 })
 export type ScanMeta = z.infer<typeof ScanMeta>
 
-/** output-open-ai/index.json */
+/** output/index.json */
 export const ScanIndex = z.object({
   meta: ScanMeta,
   journeys: z.array(JourneySummary),

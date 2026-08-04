@@ -2,7 +2,7 @@ node_modules/
 dist/
 .env
 *.log
-/output-open-ai/
+/output/
 
 # LangGraph API
 .langgraph_api

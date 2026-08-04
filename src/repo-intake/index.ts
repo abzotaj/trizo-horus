@@ -161,8 +161,7 @@ export function resolveRepoInputs(selection: RepoSelection): RepoInput[] {
     byPath.set(input.path, input)
   }
 
-  const skip = new Set(selection.skipRepos ?? []);
-  console.log({skip});
+  const skip = new Set(selection.skipRepos ?? [])
   return Array.from(byPath.values()).filter((input) => !skip.has(input.name))
 }
 
