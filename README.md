@@ -260,3 +260,21 @@ Example input to paste into a new Studio run (adjust the path to a real local re
   "modelId": "claude-sonnet-5"
 }
 ```
+
+### `--dir` / `--skipRepos` and Studio
+
+Studio invokes the compiled graph directly over HTTP -- it never runs the CLI's own
+`resolveRepoInputs()`, so a `--dir`/`--skipRepos` folder-discovery step you'd normally pass to
+`scan` has no equivalent in the Studio input box; `repoInputs` there has to already be the
+concrete, resolved list. Rather than hand-building that list, `studio-input` resolves it the
+same way `scan` would and prints the ready-to-paste JSON instead of running the graph:
+
+```bash
+npm run dev -- studio-input \
+  --dir /path/to/all-repos --skipRepos legacy-service archived-repo \
+  --provider openai-compatible --model llama3.1 --base-url http://localhost:11434/v1
+```
+
+Takes the same `--repos`/`--dir`/`--skipRepos`/`--provider`/`--model`/`--base-url` flags as
+`scan` (no `--out`/`--api-key` -- those aren't part of the graph's input). Copy the printed
+JSON straight into Studio's Input box.
