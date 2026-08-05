@@ -6,6 +6,13 @@ import { loadRepoSnapshot, type RepoInput } from "./repo-intake/index.js"
 import type { Journey, RepoManifest } from "./types/journey.js"
 import type { StepUsage } from "./usage.js"
 
+// Local/networked models (Ollama, LM Studio, ...) can take far longer per
+// call than a hosted API -- a large repo's survey prompt on a slow or
+// contended local server can genuinely take tens of minutes. This is well
+// above the OpenAI SDK's own default (10 min), which is what surfaces as
+// "Request timed out" against a local endpoint under load.
+const DEFAULT_TIMEOUT_MS = 20 * 60_000
+
 /**
  * The scan pipeline as a LangGraph graph: a "survey" node is fanned out to
  * run once per repo in parallel (via Send), and a single "correlate" node
@@ -24,6 +31,11 @@ const ScanState = Annotation.Root({
   modelId: Annotation<string>,
   /** Only meaningful for providerId "openai-compatible" -- see src/providers/index.ts. */
   baseUrl: Annotation<string | undefined>,
+  /** Per-call abort timeout, in ms. Defaults to DEFAULT_TIMEOUT_MS if omitted. */
+  timeoutMs: Annotation<number>({
+    reducer: (_existing, update) => update,
+    default: () => DEFAULT_TIMEOUT_MS,
+  }),
   manifests: Annotation<RepoManifest[]>({
     reducer: (existing, update) => existing.concat(update),
     default: () => [],
@@ -46,13 +58,19 @@ async function surveyNode(state: typeof ScanState.State) {
       (truncated ? " -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned" : ""),
   )
   const { model } = await resolveModel(state.providerId, state.modelId, { baseUrl: state.baseUrl })
-  const { manifest, usage } = await surveyRepo(model, state.providerId, state.modelId, snapshot)
+  const { manifest, usage } = await surveyRepo(model, state.providerId, state.modelId, snapshot, state.timeoutMs)
   return { manifests: [manifest], usage: [usage] }
 }
 
 async function correlateNode(state: typeof ScanState.State) {
   const { model } = await resolveModel(state.providerId, state.modelId, { baseUrl: state.baseUrl })
-  const { journeys, usage } = await correlateJourneys(model, state.providerId, state.modelId, state.manifests)
+  const { journeys, usage } = await correlateJourneys(
+    model,
+    state.providerId,
+    state.modelId,
+    state.manifests,
+    state.timeoutMs,
+  )
   return { journeys, usage: [usage] }
 }
 
@@ -64,6 +82,7 @@ function dispatchSurveys(state: typeof ScanState.State) {
         providerId: state.providerId,
         modelId: state.modelId,
         baseUrl: state.baseUrl,
+        timeoutMs: state.timeoutMs,
       }),
   )
 }

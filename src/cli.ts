@@ -29,6 +29,12 @@ function addScanOptions(cmd: Command): Command {
       "OpenAI-compatible endpoint for --provider openai-compatible, e.g. http://localhost:11434/v1 (Ollama), " +
         "https://api.groq.com/openai/v1 (Groq)",
     )
+    .option(
+      "--timeout <minutes>",
+      "per-call timeout in minutes -- raise this for local/networked models (Ollama, LM Studio, ...), " +
+        "which can be far slower than a hosted API and may need much longer than the 10 min SDK default",
+      "20",
+    )
 }
 
 type ScanOptions = {
@@ -38,6 +44,7 @@ type ScanOptions = {
   provider: ProviderId
   model?: string
   baseUrl?: string
+  timeout: string
 }
 
 addScanOptions(program.command("scan").description("Scan repos and write journeys to --out. Pass --repos, --dir, or both."))
@@ -60,7 +67,13 @@ addScanOptions(program.command("scan").description("Scan repos and write journey
 
     console.log(`Surveying ${inputs.length} repo(s) in parallel with ${providerId}:${modelId}...`)
     const scan = buildScanGraph()
-    const result = await scan.invoke({ repoInputs: inputs, providerId, modelId, baseUrl: opts.baseUrl })
+    const result = await scan.invoke({
+      repoInputs: inputs,
+      providerId,
+      modelId,
+      baseUrl: opts.baseUrl,
+      timeoutMs: parseTimeoutMinutes(opts.timeout),
+    })
 
     const meta = ScanMeta.parse({
       generatedAt: new Date().toISOString(),
@@ -86,8 +99,28 @@ addScanOptions(
 ).action(async (opts: ScanOptions) => {
   const inputs = resolveRepoInputs({ repos: opts.repos, dir: opts.dir, skipRepos: opts.skipRepos })
   const { providerId, modelId } = await resolveModel(opts.provider, opts.model, { baseUrl: opts.baseUrl })
-  console.log(JSON.stringify({ repoInputs: inputs, providerId, modelId, baseUrl: opts.baseUrl }, null, 2))
+  console.log(
+    JSON.stringify(
+      {
+        repoInputs: inputs,
+        providerId,
+        modelId,
+        baseUrl: opts.baseUrl,
+        timeoutMs: parseTimeoutMinutes(opts.timeout),
+      },
+      null,
+      2,
+    ),
+  )
 })
+
+function parseTimeoutMinutes(minutes: string): number {
+  const parsed = Number(minutes)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`--timeout must be a positive number of minutes, got "${minutes}"`)
+  }
+  return parsed * 60_000
+}
 
 function printUsageReport(usage: StepUsage[]): void {
   console.log("\nToken usage by step:")

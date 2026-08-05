@@ -29,13 +29,17 @@ export async function correlateJourneys(
   providerId: ProviderId,
   modelId: string,
   manifests: RepoManifest[],
+  timeoutMs: number,
 ): Promise<{ journeys: Journey[]; usage: StepUsage }> {
   const structuredModel = model.withStructuredOutput(z.object({ journeys: z.array(Journey) }), { includeRaw: true })
 
-  const { raw, parsed } = await structuredModel.invoke([
-    new SystemMessage(SYSTEM_PROMPT),
-    new HumanMessage(`Repo manifests:\n${JSON.stringify(manifests, null, 2)}`),
-  ])
+  const { raw, parsed } = await structuredModel.invoke(
+    [
+      new SystemMessage(SYSTEM_PROMPT),
+      new HumanMessage(`Repo manifests:\n${JSON.stringify(manifests, null, 2)}`),
+    ],
+    { signal: AbortSignal.timeout(timeoutMs) },
+  )
 
   const usage = recordUsage("correlate", providerId, modelId, raw)
   return { journeys: parsed.journeys, usage }

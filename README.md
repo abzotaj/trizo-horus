@@ -126,6 +126,19 @@ pipeline depends on `.withStructuredOutput()` reliably filling a nested schema
 are noticeably worse at this than Claude/GPT/Gemini -- expect more malformed or truncated JSON,
 missed steps, and silent retries. Worth a small test repo before trusting it on something large.
 
+**Timeouts against local/networked servers:** the OpenAI SDK's own default request timeout is
+10 minutes, which a local model under load can easily exceed -- a large repo's survey prompt on
+a consumer GPU (or over your LAN to another machine) can genuinely take longer than that,
+especially once several repos are surveyed in parallel against the *same* server. `--timeout
+<minutes>` (default `20`) raises this; it's threaded through as an `AbortSignal` on every
+model call (`src/agents/surveyor.ts`/`correlator.ts`), so it applies regardless of provider.
+If you're still seeing timeouts (or things are just slow) after raising it, the more likely
+cause is contention, not the timeout value itself: every repo is surveyed **in parallel**
+(`src/graph.ts`'s `Send` fan-out), and most local servers -- Ollama included -- serialize or
+sharply limit concurrent generations by default, so a multi-repo scan queues up behind itself
+on one machine. Scanning fewer repos per run, or a faster/smaller model, will help more than a
+bigger timeout once you're in that regime.
+
 ## Repo file coverage
 
 `src/repo-intake` reads every text file in a repo regardless of extension -- application code,
@@ -260,6 +273,10 @@ Example input to paste into a new Studio run (adjust the path to a real local re
   "modelId": "claude-sonnet-5"
 }
 ```
+
+`timeoutMs` is optional too (milliseconds, not minutes -- defaults to 20 min if omitted); add it
+directly to the JSON if you need a longer per-call timeout, e.g. `"timeoutMs": 2700000` for 45
+minutes against a slow local model.
 
 ### `--dir` / `--skipRepos` and Studio
 

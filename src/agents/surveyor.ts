@@ -48,6 +48,7 @@ export async function surveyRepo(
   providerId: ProviderId,
   modelId: string,
   snapshot: RepoSnapshot,
+  timeoutMs: number,
 ): Promise<{ manifest: RepoManifest; usage: StepUsage }> {
   const fileList = snapshot.files.map((f) => f.path).join("\n")
   let body = snapshot.files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n")
@@ -63,10 +64,13 @@ export async function surveyRepo(
     { includeRaw: true },
   )
 
-  const { raw, parsed } = await structuredModel.invoke([
-    new SystemMessage(SYSTEM_PROMPT),
-    new HumanMessage(`Repository: ${snapshot.name}\n\nFile list:\n${fileList}\n\nFile contents:\n${body}`),
-  ])
+  const { raw, parsed } = await structuredModel.invoke(
+    [
+      new SystemMessage(SYSTEM_PROMPT),
+      new HumanMessage(`Repository: ${snapshot.name}\n\nFile list:\n${fileList}\n\nFile contents:\n${body}`),
+    ],
+    { signal: AbortSignal.timeout(timeoutMs) },
+  )
 
   const manifest = RepoManifest.parse({ repo: snapshot.name, ...parsed })
   const usage = recordUsage(`survey:${snapshot.name}`, providerId, modelId, raw)
