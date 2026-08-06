@@ -35,6 +35,12 @@ function addScanOptions(cmd: Command): Command {
         "which can be far slower than a hosted API and may need much longer than the 10 min SDK default",
       "20",
     )
+    .option(
+      "--max-rounds <n>",
+      "max resolve rounds where repo agents exchange edges before handing off to the correlator " +
+        "regardless of convergence -- bounds worst-case LLM calls (repos x rounds) against calls that never resolve",
+      "4",
+    )
 }
 
 type ScanOptions = {
@@ -45,6 +51,7 @@ type ScanOptions = {
   model?: string
   baseUrl?: string
   timeout: string
+  maxRounds: string
 }
 
 addScanOptions(program.command("scan").description("Scan repos and write journeys to --out. Pass --repos, --dir, or both."))
@@ -73,6 +80,7 @@ addScanOptions(program.command("scan").description("Scan repos and write journey
       modelId,
       baseUrl: opts.baseUrl,
       timeoutMs: parseTimeoutMinutes(opts.timeout),
+      maxRounds: parseMaxRounds(opts.maxRounds),
     })
 
     const meta = ScanMeta.parse({
@@ -107,6 +115,7 @@ addScanOptions(
         modelId,
         baseUrl: opts.baseUrl,
         timeoutMs: parseTimeoutMinutes(opts.timeout),
+        maxRounds: parseMaxRounds(opts.maxRounds),
       },
       null,
       2,
@@ -120,6 +129,14 @@ function parseTimeoutMinutes(minutes: string): number {
     throw new Error(`--timeout must be a positive number of minutes, got "${minutes}"`)
   }
   return parsed * 60_000
+}
+
+function parseMaxRounds(rounds: string): number {
+  const parsed = Number(rounds)
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`--max-rounds must be a positive integer, got "${rounds}"`)
+  }
+  return parsed
 }
 
 function printUsageReport(usage: StepUsage[]): void {

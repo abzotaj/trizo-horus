@@ -34,16 +34,30 @@ trizo-horus scan --dir ./all-repos --repos ../elsewhere/extra-repo --out ./outpu
    + line citation and a confidence rating, plus a list of `unresolvedCalls` -- outbound calls
    the repo makes whose destination lives elsewhere.
 
-3. **Correlator agent** (`src/agents/correlator.ts`) -- a single final pass over every
-   manifest. It matches each repo's `unresolvedCalls` against another repo's steps to build
-   edges, groups connected steps into named journeys, and fills in each journey's
+3. **Resolver agents** (`src/agents/resolver.ts`) -- once every surveyor finishes, this is
+   where repo agents actually *talk to each other*: one resolver runs per repo (again fanned
+   out in parallel), and each is handed every OTHER repo's manifest plus every edge confirmed
+   so far, and tries to match its own `unresolvedCalls` to a step somewhere else. A match
+   becomes an `Edge`; anything it can't match yet stays in `unresolvedCalls` for the next round.
+   Repos that resolve everything skip the LLM call entirely on later rounds. This repeats --
+   each round's edges become the next round's context -- until a round adds no new edges or
+   `--max-rounds` (default `4`) is hit, whichever comes first.
+
+4. **Correlator agent** (`src/agents/correlator.ts`) -- one lightweight final pass, not the
+   from-scratch matcher it used to be. By the time it runs, the repo agents have already found
+   and agreed on most edges themselves; the correlator only (a) catches anything the resolve
+   rounds missed and (b) groups the now-mostly-complete edge graph into named journeys with a
    description/domain/tags.
 
-4. **Output** (`src/output/writer.ts`) -- written to disk, not one file.
+5. **Output** (`src/output/writer.ts`) -- written to disk, not one file.
 
-The graph (`src/graph.ts`) models this as: `START` fans out a `Send("survey", ...)` per repo,
-LangGraph waits for every parallel `survey` branch to finish (their `manifests` updates are
-merged via a concat reducer), then runs `correlate` once over the accumulated manifests.
+The graph (`src/graph.ts`) models this as: `START` fans out a `Send("survey", ...)` per repo;
+once every parallel `survey` branch finishes (`manifests` merged via a per-repo-key reducer,
+keyed by repo name so a later round can patch one repo without clobbering the rest), it fans
+out a `Send("resolve", ...)` per repo, giving each branch a snapshot of every manifest and edge
+as of that round's start. After each resolve round joins, `afterResolveRound` checks whether
+`edges.length` grew since the previous round: if so (and the round cap isn't hit), it loops back
+into another `resolve` round; otherwise it hands off to `correlate` once, which runs to `END`.
 
 ## Why the output is split across files
 
@@ -202,11 +216,17 @@ If you see `truncated`, raise `MAX_FILES_PER_REPO` in `src/repo-intake/index.ts`
 
 ## Token usage and cost
 
-Every LLM call in the pipeline -- one per repo surveyed, plus one for the correlator -- is
-tracked as a `StepUsage` record (`src/usage.ts`): input/output/total tokens, plus an estimated
-USD cost. Each survey call's usage is captured via LangChain's `includeRaw: true` on
-`withStructuredOutput`, which returns the underlying `AIMessage.usage_metadata` alongside the
-parsed result; the correlator call is tracked the same way.
+Every LLM call in the pipeline is tracked as a `StepUsage` record (`src/usage.ts`):
+input/output/total tokens, plus an estimated USD cost. That's one call per repo surveyed, plus
+one **resolve** call per repo per round it still has `unresolvedCalls` left (repos that resolve
+everything are free on later rounds -- no LLM call at all), plus one final correlator call. Each
+call's usage is captured via LangChain's `includeRaw: true` on `withStructuredOutput`, which
+returns the underlying `AIMessage.usage_metadata` alongside the parsed result.
+
+Worst-case resolve-round cost scales with `repos x --max-rounds` (default `4`) if calls never
+resolve -- lower `--max-rounds` to bound cost/latency on a scan with many repos, at the risk of
+leaving some cross-repo edges unresolved for the correlator to catch on its single final pass
+instead.
 
 - Printed as a table after every `scan` run, with a grand total.
 - Persisted to `output/usage.json` (`{ steps, totalTokens, totalCostUsd }`) alongside the
@@ -244,8 +264,9 @@ npm run scan -- --dir /path/to/all-repos --skipRepos legacy-service --provider a
 ## Debugging in LangGraph Studio
 
 `langgraph.json` points the LangGraph CLI at `src/graph.ts`'s compiled `graph` export, so the
-pipeline can run and be inspected outside the CLI too -- step through the survey/correlate
-nodes one at a time, replay a run, inspect the exact state at each step.
+pipeline can run and be inspected outside the CLI too -- step through the survey/resolve/correlate
+nodes one at a time (including each resolve-round loop), replay a run, inspect the exact state at
+each step.
 
 ```bash
 npm run studio
@@ -276,7 +297,9 @@ Example input to paste into a new Studio run (adjust the path to a real local re
 
 `timeoutMs` is optional too (milliseconds, not minutes -- defaults to 20 min if omitted); add it
 directly to the JSON if you need a longer per-call timeout, e.g. `"timeoutMs": 2700000` for 45
-minutes against a slow local model.
+minutes against a slow local model. `maxRounds` is also optional (defaults to `4`) -- caps how
+many resolve rounds the repo agents get before being handed off to the correlator regardless of
+convergence.
 
 ### `--dir` / `--skipRepos` and Studio
 
