@@ -6,3 +6,6 @@ dist/
 
 # LangGraph API
 .langgraph_api
+
+# Per-repo survey cache (see src/cache) -- local, regenerable, scan-run-specific
+.trizo-horus-cache/

@@ -27,12 +27,24 @@ trizo-horus scan --dir ./all-repos --repos ../elsewhere/extra-repo --out ./outpu
    least one of the two is required. GitHub sources (`--repos owner/repo`, cloned
    automatically) are on the roadmap, not implemented yet -- clone locally first.
 
+   Each file also gets a deterministic pass of **fact extraction** (`src/ast`) before it ever
+   reaches an LLM: real-AST analysis (the TypeScript compiler API) for `.ts`/`.tsx`/`.js`/`.jsx`,
+   and regex-pattern extraction for PHP, Terraform/HCL, Java, Python, and shell/PowerShell (no
+   lightweight dependency-free parser exists for those in the JS ecosystem -- see the doc
+   comment in `src/ast/patterns.ts`). This produces a `CodeFact[]` per file -- route
+   declarations, outbound HTTP/queue calls, Terraform resources, each with an exact file+line
+   and the literal target string as written -- which rides alongside the raw file text into the
+   surveyor prompt rather than replacing it (see step 2). It's a hint, not a verdict: mechanical,
+   not exhaustive, and the surveyor still reads the actual code to decide what a fact means.
+
 2. **Surveyor agents** (`src/agents/surveyor.ts`) -- one per repo, fanned out **in parallel**
-   by the LangGraph graph in `src/graph.ts`. Each surveyor only sees its own repo and
-   extracts a `RepoManifest`: every step found in that repo (pages, API endpoints, services,
-   db reads/writes, queues, external vendor calls, infra resources/scripts), each with a file
-   + line citation and a confidence rating, plus a list of `unresolvedCalls` -- outbound calls
-   the repo makes whose destination lives elsewhere.
+   by the LangGraph graph in `src/graph.ts`. Each surveyor sees its own repo's raw file text
+   *plus* the facts extracted from it, and produces a `RepoManifest`: every step found in that
+   repo (pages, API endpoints, services, db reads/writes, queues, external vendor calls, infra
+   resources/scripts), each with a file + line citation and a confidence rating, plus a list of
+   `unresolvedCalls` -- outbound calls the repo makes whose destination lives elsewhere. A repo
+   whose file content hasn't changed since a previous run with the same provider/model skips
+   this LLM call entirely -- see "Cached incremental re-scan" below.
 
 3. **Resolver agents** (`src/agents/resolver.ts`) -- once every surveyor finishes, this is
    where repo agents actually *talk to each other*: one resolver runs per repo (again fanned
@@ -214,6 +226,23 @@ acme-web: 4000 file(s) loaded (skipped 20 media, 0 sensitive, 1 lockfile, 40 tes
 If you see `truncated`, raise `MAX_FILES_PER_REPO` in `src/repo-intake/index.ts`, or narrow
 `--repos`/`--dir` to point at the subset of the repo that actually matters for journey mapping.
 
+## Cached incremental re-scan
+
+Every `scan` writes a per-repo cache entry to `--cache-dir` (default `.trizo-horus-cache/`,
+gitignored -- it's a local, regenerable performance cache, not scan output): a content hash of
+that repo's files plus the provider/model used, alongside the `RepoManifest` the surveyor
+produced. On the next `scan`, a repo whose files hash the same (no content or path changes) *and*
+was last surveyed with the same provider/model skips the surveyor's LLM call entirely and reuses
+the cached manifest -- the resolve/correlate phases still run fresh every time over the full
+current manifest set, since another repo's edits can change what resolves against an unchanged
+repo's steps.
+
+- `--no-cache` ignores any cache entries and re-surveys every repo, e.g. after changing the
+  surveyor's prompt and wanting fresh output across the board.
+- `--cache-dir <path>` points the cache somewhere else (e.g. to share it across CI runs).
+- A cache hit logs `<repo>: unchanged since last scan -- reusing cached manifest, no LLM call`
+  and contributes no entry to that run's token-usage table -- there's no LLM call to report.
+
 ## Token usage and cost
 
 Every LLM call in the pipeline is tracked as a `StepUsage` record (`src/usage.ts`):
@@ -251,7 +280,9 @@ once real output can be reviewed.
 - GitHub repo sources (clone-on-demand instead of requiring a local checkout).
 - Chunking for repos too large for a single surveyor prompt (currently truncated naively at
   `MAX_PROMPT_CHARS`).
-- Incremental re-scan (only re-survey repos that changed since the last scan).
+- Real AST parsing (not regex patterns) for PHP, Terraform/HCL, Java, Python, and shell/PowerShell
+  -- e.g. via tree-sitter grammars -- if the pattern-based extraction in `src/ast/patterns.ts`
+  proves too imprecise in practice.
 
 ## Setup
 

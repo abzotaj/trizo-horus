@@ -41,6 +41,12 @@ function addScanOptions(cmd: Command): Command {
         "regardless of convergence -- bounds worst-case LLM calls (repos x rounds) against calls that never resolve",
       "4",
     )
+    .option(
+      "--cache-dir <path>",
+      "where per-repo survey results are cached across runs so an unchanged repo skips its LLM call next time",
+      ".trizo-horus-cache",
+    )
+    .option("--no-cache", "ignore cached survey results from a previous run and re-survey every repo")
 }
 
 type ScanOptions = {
@@ -52,6 +58,8 @@ type ScanOptions = {
   baseUrl?: string
   timeout: string
   maxRounds: string
+  cacheDir: string
+  cache: boolean
 }
 
 addScanOptions(program.command("scan").description("Scan repos and write journeys to --out. Pass --repos, --dir, or both."))
@@ -81,6 +89,8 @@ addScanOptions(program.command("scan").description("Scan repos and write journey
       baseUrl: opts.baseUrl,
       timeoutMs: parseTimeoutMinutes(opts.timeout),
       maxRounds: parseMaxRounds(opts.maxRounds),
+      cacheDir: opts.cacheDir,
+      noCache: !opts.cache,
     })
 
     const meta = ScanMeta.parse({
@@ -116,6 +126,8 @@ addScanOptions(
         baseUrl: opts.baseUrl,
         timeoutMs: parseTimeoutMinutes(opts.timeout),
         maxRounds: parseMaxRounds(opts.maxRounds),
+        cacheDir: opts.cacheDir,
+        noCache: !opts.cache,
       },
       null,
       2,

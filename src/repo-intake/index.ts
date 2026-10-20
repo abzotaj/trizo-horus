@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
+import { extractFacts, type CodeFact } from "../ast/index.js"
 
 export type RepoInput = {
   /** Short name used as the `repo` field on steps, e.g. "acme-api-gateway". */
@@ -12,6 +13,8 @@ export type RepoInput = {
 export type RepoFile = {
   path: string
   content: string
+  /** Deterministic route/call-site facts extracted from this file -- see src/ast. */
+  facts: CodeFact[]
 }
 
 export type RepoSkipCounts = {
@@ -254,7 +257,8 @@ export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> 
       }
       try {
         const content = await readFile(full, "utf8")
-        files.push({ path: relative(input.path, full), content })
+        const relPath = relative(input.path, full)
+        files.push({ path: relPath, content, facts: extractFacts(relPath, content) })
       } catch {
         skipped.unreadable++
       }

@@ -2,6 +2,7 @@ import { Annotation, END, Send, START, StateGraph } from "@langchain/langgraph"
 import { correlateJourneys } from "./agents/correlator.js"
 import { resolveRepoCalls } from "./agents/resolver.js"
 import { surveyRepo } from "./agents/surveyor.js"
+import { DEFAULT_CACHE_DIR, hashRepoFiles, readRepoCache, writeRepoCache } from "./cache/index.js"
 import { resolveModel, type ProviderId } from "./providers/index.js"
 import { loadRepoSnapshot, type RepoInput } from "./repo-intake/index.js"
 import type { Edge, Journey, RepoManifest } from "./types/journey.js"
@@ -25,7 +26,9 @@ const DEFAULT_MAX_ROUNDS = 4
  * 1. "survey": one node instance per repo (fanned out via Send), each
  *    independently reading its own repo and producing a RepoManifest --
  *    its steps, plus "unresolvedCalls" (outbound calls it can't place
- *    itself).
+ *    itself). Skipped entirely (no LLM call) for a repo whose file content
+ *    hash matches its cache entry from a previous run with the same
+ *    provider/model -- see src/cache/index.ts.
  * 2. "resolve": once every survey finishes, one node instance per repo
  *    (again via Send) is given every OTHER repo's manifest and tries to
  *    match its own unresolvedCalls to a step elsewhere, proposing Edges.
@@ -63,6 +66,16 @@ const ScanState = Annotation.Root({
   maxRounds: Annotation<number>({
     reducer: (_existing, update) => update,
     default: () => DEFAULT_MAX_ROUNDS,
+  }),
+  /** Where per-repo survey results are cached across runs -- see src/cache/index.ts. */
+  cacheDir: Annotation<string>({
+    reducer: (_existing, update) => update,
+    default: () => DEFAULT_CACHE_DIR,
+  }),
+  /** Forces every repo to be re-surveyed even if its cache entry is still valid. */
+  noCache: Annotation<boolean>({
+    reducer: (_existing, update) => update,
+    default: () => false,
   }),
   /** Which repo this branch is responsible for -- only set inside a "resolve" Send. */
   repoName: Annotation<string | undefined>({
@@ -106,8 +119,21 @@ async function surveyNode(state: typeof ScanState.State) {
       ` (skipped ${skipped.asset} media, ${skipped.sensitive} sensitive, ${skipped.lockfile} lockfile, ${skipped.testOrMock} test/mock, ${skipped.tooLarge} too large, ${skipped.unreadable} unreadable)` +
       (truncated ? " -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned" : ""),
   )
+
+  const fileHash = hashRepoFiles(snapshot.files)
+  if (!state.noCache) {
+    const cached = await readRepoCache(state.cacheDir, repo.name, fileHash, state.providerId, state.modelId)
+    if (cached) {
+      console.log(`  ${repo.name}: unchanged since last scan -- reusing cached manifest, no LLM call`)
+      return { manifests: { [repo.name]: cached } }
+    }
+  }
+
   const { model } = await resolveModel(state.providerId, state.modelId, { baseUrl: state.baseUrl })
   const { manifest, usage } = await surveyRepo(model, state.providerId, state.modelId, snapshot, state.timeoutMs)
+  if (!state.noCache) {
+    await writeRepoCache(state.cacheDir, repo.name, fileHash, state.providerId, state.modelId, manifest)
+  }
   return { manifests: { [repo.name]: manifest }, usage: [usage] }
 }
 
@@ -168,6 +194,8 @@ function dispatchSurveys(state: typeof ScanState.State) {
         modelId: state.modelId,
         baseUrl: state.baseUrl,
         timeoutMs: state.timeoutMs,
+        cacheDir: state.cacheDir,
+        noCache: state.noCache,
       }),
   )
 }

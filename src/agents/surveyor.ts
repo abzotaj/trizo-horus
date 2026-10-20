@@ -40,6 +40,14 @@ candidates to be matched against another repo's steps later. Do not guess which 
 them; just describe the call (target endpoint/topic/method string) as precisely as the code
 allows.
 
+You are also given a "facts" list: route/call-site locations found by deterministic static
+analysis (not an LLM), each with the exact file+line and the literal path/topic/resource string
+as written in the code. Treat these as reliable anchors for getting sourceRef line numbers and
+target strings exactly right -- but they're mechanical pattern matches, not a judgment of what
+matters, so still read the surrounding code yourself to decide the step's kind/label/confidence,
+and don't limit yourself to the facts list: it is not exhaustive, and a real step or call it
+missed is still worth reporting from the file contents directly.
+
 Only report what the code actually supports. Do not invent steps for typical patterns you'd
 expect but didn't see.`
 
@@ -51,6 +59,9 @@ export async function surveyRepo(
   timeoutMs: number,
 ): Promise<{ manifest: RepoManifest; usage: StepUsage }> {
   const fileList = snapshot.files.map((f) => f.path).join("\n")
+  const facts = snapshot.files.flatMap((f) =>
+    f.facts.map(({ file, startLine, endLine, kind, target }) => ({ file, startLine, endLine, kind, target })),
+  )
   let body = snapshot.files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n")
   if (body.length > MAX_PROMPT_CHARS) {
     body = body.slice(0, MAX_PROMPT_CHARS) + "\n\n[... truncated, repo exceeds single-pass prompt budget ...]"
@@ -67,7 +78,11 @@ export async function surveyRepo(
   const { raw, parsed } = await structuredModel.invoke(
     [
       new SystemMessage(SYSTEM_PROMPT),
-      new HumanMessage(`Repository: ${snapshot.name}\n\nFile list:\n${fileList}\n\nFile contents:\n${body}`),
+      new HumanMessage(
+        `Repository: ${snapshot.name}\n\nFile list:\n${fileList}\n\n` +
+          `Facts (deterministic, not exhaustive):\n${JSON.stringify(facts)}\n\n` +
+          `File contents:\n${body}`,
+      ),
     ],
     { signal: AbortSignal.timeout(timeoutMs) },
   )
