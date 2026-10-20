@@ -28,10 +28,13 @@ trizo-horus scan --dir ./all-repos --repos ../elsewhere/extra-repo --out ./outpu
    automatically) are on the roadmap, not implemented yet -- clone locally first.
 
    Each file also gets a deterministic pass of **fact extraction** (`src/ast`) before it ever
-   reaches an LLM: real-AST analysis (the TypeScript compiler API) for `.ts`/`.tsx`/`.js`/`.jsx`,
-   and regex-pattern extraction for PHP, Terraform/HCL, Java, Python, and shell/PowerShell (no
-   lightweight dependency-free parser exists for those in the JS ecosystem -- see the doc
-   comment in `src/ast/patterns.ts`). This produces a `CodeFact[]` per file -- route
+   reaches an LLM: real-AST analysis via the TypeScript compiler API for `.ts`/`.tsx`/`.js`/`.jsx`,
+   and a real tree-sitter parse (`src/ast/tree-sitter.ts`, prebuilt WASM grammars -- no native
+   build step) for PHP, Java, Python, Bash, and Terraform/HCL. PowerShell is the one exception --
+   no mainstream prebuilt tree-sitter grammar exists for it -- so it stays on regex-pattern
+   extraction (`src/ast/patterns.ts`). Being a real parse tree (not regex) means a route or call
+   embedded in a comment or string literal is correctly ignored, and a declaration split across
+   multiple lines is still captured as one fact. This produces a `CodeFact[]` per file -- route
    declarations, outbound HTTP/queue calls, Terraform resources, each with an exact file+line
    and the literal target string as written -- which rides alongside the raw file text into the
    surveyor prompt rather than replacing it (see step 2). It's a hint, not a verdict: mechanical,
@@ -280,9 +283,8 @@ once real output can be reviewed.
 - GitHub repo sources (clone-on-demand instead of requiring a local checkout).
 - Chunking for repos too large for a single surveyor prompt (currently truncated naively at
   `MAX_PROMPT_CHARS`).
-- Real AST parsing (not regex patterns) for PHP, Terraform/HCL, Java, Python, and shell/PowerShell
-  -- e.g. via tree-sitter grammars -- if the pattern-based extraction in `src/ast/patterns.ts`
-  proves too imprecise in practice.
+- A tree-sitter grammar for PowerShell, if a mainstream prebuilt one ever appears -- it's the one
+  remaining language on regex-pattern extraction (`src/ast/patterns.ts`).
 
 ## Setup
 

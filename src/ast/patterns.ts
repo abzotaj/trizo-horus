@@ -1,15 +1,11 @@
 import type { CodeFact, FactKind } from "./types.js"
 
 /**
- * Regex-pattern fact extraction for languages with no lightweight, dependency-free
- * AST parser available in the JS ecosystem (PHP, Terraform/HCL, Java, Python,
- * shell/bash, PowerShell). This is intentionally NOT a real parse tree --
- * tree-sitter grammars or per-language parser packages (php-parser,
- * java-parser, ...) would give one, at the cost of several new native/WASM
- * or heavyweight dependencies per language. These rules target the same
- * signal kinds (route declarations, outbound HTTP/queue calls, Terraform
- * resources) via well-scoped regexes instead, which is what most lightweight
- * polyglot code-intel tools do in practice.
+ * Regex-pattern fact extraction for PowerShell -- the one target language
+ * with no mainstream prebuilt tree-sitter grammar (see src/ast/tree-sitter.ts
+ * for PHP/Java/Python/Bash/Terraform, which all moved off regex onto real
+ * parse trees). These rules target the same signal kinds (outbound HTTP
+ * calls, provisioning/deploy commands) via well-scoped regexes instead.
  */
 export type PatternRule = {
   kind: FactKind
@@ -64,52 +60,7 @@ function lineOfOffset(lineStarts: number[], offset: number): number {
   return lo + 1
 }
 
-export const PHP_RULES: PatternRule[] = [
-  { kind: "route", regex: /Route::(?:get|post|put|patch|delete|any)\s*\(\s*['"]([^'"]+)['"]/gi },
-  { kind: "httpCall", regex: /Http::(?:get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]/gi },
-  { kind: "httpCall", regex: /curl_setopt\s*\([^,]+,\s*CURLOPT_URL\s*,\s*['"]([^'"]+)['"]/gi },
-  { kind: "queuePublish", regex: /(?:Queue::push|dispatch)\s*\(\s*(?:new\s+)?([A-Za-z0-9_\\]+)/g },
-  { kind: "dbQuery", regex: /DB::(?:select|insert|update|delete|statement)\s*\(\s*['"]([^'"]+)['"]/gi },
-]
-
-export const TERRAFORM_RULES: PatternRule[] = [
-  { kind: "terraformResource", regex: /resource\s+"([^"]+)"\s+"([^"]+)"/g },
-  { kind: "terraformResource", regex: /data\s+"([^"]+)"\s+"([^"]+)"/g },
-  { kind: "terraformResource", regex: /module\s+"([^"]+)"/g },
-]
-
-export const SHELL_RULES: PatternRule[] = [
-  { kind: "httpCall", regex: /\bcurl\b[^\n]*?["']?(https?:\/\/\S+?)["']?(?=\s|$)/g },
-  { kind: "httpCall", regex: /\bwget\b[^\n]*?["']?(https?:\/\/\S+?)["']?(?=\s|$)/g },
-  {
-    kind: "queuePublish",
-    regex: /aws\s+(?:sqs|sns)\s+(?:send-message|publish)\s+.*?--(?:queue-url|topic-arn)\s+["']?(\S+?)["']?(?=\s|$)/g,
-  },
-  {
-    kind: "scriptInvocation",
-    regex: /\b(kubectl\s+apply[^\n]*|docker\s+(?:build|push|run)[^\n]*|terraform\s+(?:apply|plan)[^\n]*|ssh\s+\S+[^\n]*|scp\s+[^\n]*)/g,
-  },
-]
-
 export const POWERSHELL_RULES: PatternRule[] = [
   { kind: "httpCall", regex: /Invoke-(?:RestMethod|WebRequest)\s+.*?-Uri\s+["']?([^\s"']+)["']?/gi },
   { kind: "scriptInvocation", regex: /\b(New-AzResource[^\n]*|New-AzureRmResource[^\n]*|Start-AzVM[^\n]*|Publish-AzWebapp[^\n]*)/gi },
-]
-
-export const JAVA_RULES: PatternRule[] = [
-  { kind: "route", regex: /@(?:Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']/g },
-  { kind: "route", regex: /@RequestMapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']/g },
-  { kind: "httpCall", regex: /restTemplate\.(?:getForObject|postForObject|exchange|getForEntity|postForEntity)\s*\(\s*["']([^"']+)["']/g },
-  { kind: "queuePublish", regex: /kafkaTemplate\.send\s*\(\s*["']([^"']+)["']/g },
-  { kind: "queueConsume", regex: /@KafkaListener\s*\(\s*(?:topics\s*=\s*)?["']([^"']+)["']/g },
-  { kind: "dbQuery", regex: /@Query\s*\(\s*["']([^"']+)["']/g },
-]
-
-export const PYTHON_RULES: PatternRule[] = [
-  { kind: "route", regex: /@app\.route\s*\(\s*["']([^"']+)["']/g },
-  { kind: "route", regex: /@app\.(?:get|post|put|delete|patch)\s*\(\s*["']([^"']+)["']/gi },
-  { kind: "route", regex: /@(?:router|blueprint)\.(?:get|post|put|delete|patch|route)\s*\(\s*["']([^"']+)["']/gi },
-  { kind: "httpCall", regex: /requests\.(?:get|post|put|delete|patch)\s*\(\s*["']([^"']+)["']/gi },
-  { kind: "queuePublish", regex: /\w+\.(?:delay|apply_async)\s*\(/g },
-  { kind: "queueConsume", regex: /@(?:app|celery)\.task\b/gi },
 ]

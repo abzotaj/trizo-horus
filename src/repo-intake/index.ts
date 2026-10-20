@@ -258,7 +258,7 @@ export async function loadRepoSnapshot(input: RepoInput): Promise<RepoSnapshot> 
       try {
         const content = await readFile(full, "utf8")
         const relPath = relative(input.path, full)
-        files.push({ path: relPath, content, facts: extractFacts(relPath, content) })
+        files.push({ path: relPath, content, facts: await extractFacts(relPath, content) })
       } catch {
         skipped.unreadable++
       }
