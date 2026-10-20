@@ -2,8 +2,9 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { z } from "zod"
 import type { ProviderId } from "../providers/index.js"
-import { Edge, Journey, type RepoManifest } from "../types/journey.js"
+import { Edge, Journey, LooseJourney, type RepoManifest } from "../types/journey.js"
 import { recordUsage, type StepUsage } from "../usage.js"
+import { invokeStructured } from "./structured.js"
 
 const SYSTEM_PROMPT = `You are given the final manifests from every repo scanned, plus the edges the repos' own
 agents already confirmed during a multi-round cross-repo resolution exchange (each repo agent
@@ -32,19 +33,21 @@ export async function correlateJourneys(
   confirmedEdges: Edge[],
   timeoutMs: number,
 ): Promise<{ journeys: Journey[]; usage: StepUsage }> {
-  const structuredModel = model.withStructuredOutput(z.object({ journeys: z.array(Journey) }), { includeRaw: true })
-
-  const { raw, parsed } = await structuredModel.invoke(
-    [
+  const { output, raws } = await invokeStructured({
+    model,
+    label: "correlate",
+    timeoutMs,
+    schema: z.object({ journeys: z.array(Journey) }),
+    parser: z.object({ journeys: z.array(LooseJourney) }),
+    messages: [
       new SystemMessage(SYSTEM_PROMPT),
       new HumanMessage(
         `Repo manifests:\n${JSON.stringify(manifests, null, 2)}\n\n` +
           `Edges already confirmed by the repos' own agents:\n${JSON.stringify(confirmedEdges, null, 2)}`,
       ),
     ],
-    { signal: AbortSignal.timeout(timeoutMs) },
-  )
+  })
 
-  const usage = recordUsage("correlate", providerId, modelId, raw)
-  return { journeys: parsed.journeys, usage }
+  const usage = recordUsage("correlate", providerId, modelId, raws)
+  return { journeys: output.journeys, usage }
 }

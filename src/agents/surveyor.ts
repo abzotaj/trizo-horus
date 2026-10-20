@@ -3,8 +3,9 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { z } from "zod"
 import type { ProviderId } from "../providers/index.js"
 import type { RepoSnapshot } from "../repo-intake/index.js"
-import { RepoManifest } from "../types/journey.js"
+import { LooseStep, LooseUnresolvedCalls, RepoManifest } from "../types/journey.js"
 import { recordUsage, type StepUsage } from "../usage.js"
+import { invokeStructured } from "./structured.js"
 
 // Naive v1 cap on how much source text goes into a single prompt. Real
 // chunking (splitting a large repo across multiple surveyor calls and
@@ -67,16 +68,29 @@ export async function surveyRepo(
     body = body.slice(0, MAX_PROMPT_CHARS) + "\n\n[... truncated, repo exceeds single-pass prompt budget ...]"
   }
 
-  const structuredModel = model.withStructuredOutput(
-    z.object({
+  const { output, raws } = await invokeStructured({
+    model,
+    label: `survey:${snapshot.name}`,
+    timeoutMs,
+    schema: z.object({
       steps: RepoManifest.shape.steps,
       unresolvedCalls: RepoManifest.shape.unresolvedCalls,
     }),
-    { includeRaw: true },
-  )
-
-  const { raw, parsed } = await structuredModel.invoke(
-    [
+    parser: z.object({
+      // Every step a survey reports belongs to this repo by construction, so a
+      // step the model forgot to tag with its repo is filled in rather than rejected.
+      steps: z.array(
+        z.preprocess(
+          (step) =>
+            step && typeof step === "object" && (step as { repo?: unknown }).repo == null
+              ? { ...step, repo: snapshot.name }
+              : step,
+          LooseStep,
+        ),
+      ),
+      unresolvedCalls: LooseUnresolvedCalls,
+    }),
+    messages: [
       new SystemMessage(SYSTEM_PROMPT),
       new HumanMessage(
         `Repository: ${snapshot.name}\n\nFile list:\n${fileList}\n\n` +
@@ -84,10 +98,9 @@ export async function surveyRepo(
           `File contents:\n${body}`,
       ),
     ],
-    { signal: AbortSignal.timeout(timeoutMs) },
-  )
+  })
 
-  const manifest = RepoManifest.parse({ repo: snapshot.name, ...parsed })
-  const usage = recordUsage(`survey:${snapshot.name}`, providerId, modelId, raw)
+  const manifest = RepoManifest.parse({ repo: snapshot.name, ...output })
+  const usage = recordUsage(`survey:${snapshot.name}`, providerId, modelId, raws)
   return { manifest, usage }
 }

@@ -22,16 +22,16 @@
     "@langchain/langgraph": "^1.4.8",
     "@langchain/openai": "^1.5.5",
     "@tree-sitter-grammars/tree-sitter-hcl": "^1.2.0",
-    "commander": "^12.1.0",
-    "dotenv": "^16.6.1",
+    "commander": "^15.0.0",
+    "dotenv": "^18.0.8",
     "tree-sitter-wasms": "^0.1.13",
-    "typescript": "^5.5.3",
+    "typescript": "^7.0.2",
     "web-tree-sitter": "^0.25.0",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@langchain/langgraph-cli": "^1.4.4",
-    "@types/node": "^20.14.9",
+    "@types/node": "^26.6.5",
     "tsx": "^4.16.2"
   }
 }

@@ -2,8 +2,9 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { z } from "zod"
 import type { ProviderId } from "../providers/index.js"
-import { Edge, RepoManifest } from "../types/journey.js"
+import { Edge, LooseEdges, LooseUnresolvedCalls, RepoManifest } from "../types/journey.js"
 import { recordUsage, type StepUsage } from "../usage.js"
+import { invokeStructured } from "./structured.js"
 
 const SYSTEM_PROMPT = `You are one repo's agent in a multi-round exchange between repo agents that are jointly
 mapping cross-repo user journeys. Every repo has already been surveyed independently, so every
@@ -36,16 +37,19 @@ export async function resolveRepoCalls(
   confirmedEdges: Edge[],
   timeoutMs: number,
 ): Promise<{ edges: Edge[]; remainingUnresolvedCalls: RepoManifest["unresolvedCalls"]; usage: StepUsage }> {
-  const structuredModel = model.withStructuredOutput(
-    z.object({
+  const { output, raws } = await invokeStructured({
+    model,
+    label: `resolve:${ownManifest.repo}`,
+    timeoutMs,
+    schema: z.object({
       edges: z.array(Edge),
       remainingUnresolvedCalls: RepoManifest.shape.unresolvedCalls,
     }),
-    { includeRaw: true },
-  )
-
-  const { raw, parsed } = await structuredModel.invoke(
-    [
+    parser: z.object({
+      edges: LooseEdges,
+      remainingUnresolvedCalls: LooseUnresolvedCalls,
+    }),
+    messages: [
       new SystemMessage(SYSTEM_PROMPT),
       new HumanMessage(
         `Your repo: ${ownManifest.repo}\n\n` +
@@ -58,9 +62,8 @@ export async function resolveRepoCalls(
           `Edges already confirmed so far:\n${JSON.stringify(confirmedEdges, null, 2)}`,
       ),
     ],
-    { signal: AbortSignal.timeout(timeoutMs) },
-  )
+  })
 
-  const usage = recordUsage(`resolve:${ownManifest.repo}`, providerId, modelId, raw)
-  return { edges: parsed.edges, remainingUnresolvedCalls: parsed.remainingUnresolvedCalls, usage }
+  const usage = recordUsage(`resolve:${ownManifest.repo}`, providerId, modelId, raws)
+  return { edges: output.edges, remainingUnresolvedCalls: output.remainingUnresolvedCalls, usage }
 }
