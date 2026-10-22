@@ -16,15 +16,15 @@ export type FactKind =
   | "grpcCall" // an outbound gRPC client call
   | "dbQuery" // a read/write against a datastore
   | "terraformResource" // a Terraform resource/module/data block
-  | "scriptInvocation" // a provisioning/deploy command in a bash/PowerShell script
+  | "scriptInvocation"; // a provisioning/deploy command in a bash/PowerShell script
 
 export type CodeFact = {
-  file: string
-  startLine: number
-  endLine: number
-  kind: FactKind
+  file: string;
+  startLine: number;
+  endLine: number;
+  kind: FactKind;
   /** The literal path/topic/resource/table name extracted from the call-site, as written in source. */
-  target: string
+  target: string;
   /** The matched source text (trimmed), for context -- not a full AST node dump. */
-  snippet: string
-}
+  snippet: string;
+};

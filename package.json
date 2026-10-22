@@ -2,18 +2,16 @@
   "name": "trizo-horus",
   "version": "0.1.0",
   "description": "Multi-agent, multi-LLM-provider CLI that scans repositories and generates cross-repo user-journey data for the user-journey-finder viewer.",
-  "type": "module",
   "bin": {
     "trizo-horus": "dist/cli.js"
   },
+  "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "scan": "tsx src/cli.ts scan",
-    "studio": "langgraphjs dev"
-  },
-  "engines": {
-    "node": ">=20"
+    "studio": "langgraphjs dev",
+    "fmt": "oxfmt"
   },
   "dependencies": {
     "@langchain/anthropic": "^1.5.2",
@@ -24,8 +22,9 @@
     "@tree-sitter-grammars/tree-sitter-hcl": "^1.2.0",
     "commander": "^15.0.0",
     "dotenv": "^18.0.8",
+    "oxfmt": "^0.74.0",
     "tree-sitter-wasms": "^0.1.13",
-    "typescript": "^7.0.2",
+    "typescript": "^5.9.3",
     "web-tree-sitter": "^0.25.0",
     "zod": "^4.6.7"
   },
@@ -33,5 +32,8 @@
     "@langchain/langgraph-cli": "^1.4.4",
     "@types/node": "^26.6.5",
     "tsx": "^4.16.2"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

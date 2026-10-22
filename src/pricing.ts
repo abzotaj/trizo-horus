@@ -6,9 +6,9 @@
  * rather than trusting stale hardcoded values.
  */
 export type ModelPricing = {
-  inputPerMillion: number
-  outputPerMillion: number
-}
+  inputPerMillion: number;
+  outputPerMillion: number;
+};
 
 const PRICING: Record<string, ModelPricing> = {
   "claude-fable-5": { inputPerMillion: 10.0, outputPerMillion: 50.0 },
@@ -16,13 +16,20 @@ const PRICING: Record<string, ModelPricing> = {
   // Sonnet 5 has an introductory rate through 2026-08-31 ($2/$10); this uses the standard rate.
   "claude-sonnet-5": { inputPerMillion: 3.0, outputPerMillion: 15.0 },
   "claude-haiku-4-5": { inputPerMillion: 1.0, outputPerMillion: 5.0 },
-}
+};
 
 /** Fill in current OpenAI/Google pricing here to get cost estimates for those providers. */
-const EXTRA_PRICING: Record<string, ModelPricing> = {}
+const EXTRA_PRICING: Record<string, ModelPricing> = {};
 
-export function estimateCostUsd(modelId: string, inputTokens: number, outputTokens: number): number | null {
-  const pricing = EXTRA_PRICING[modelId] ?? PRICING[modelId]
-  if (!pricing) return null
-  return (inputTokens / 1_000_000) * pricing.inputPerMillion + (outputTokens / 1_000_000) * pricing.outputPerMillion
+export function estimateCostUsd(
+  modelId: string,
+  inputTokens: number,
+  outputTokens: number,
+): number | null {
+  const pricing = EXTRA_PRICING[modelId] ?? PRICING[modelId];
+  if (!pricing) return null;
+  return (
+    (inputTokens / 1_000_000) * pricing.inputPerMillion +
+    (outputTokens / 1_000_000) * pricing.outputPerMillion
+  );
 }

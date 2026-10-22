@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod";
 
 /**
  * Schema for the data trizo-horus produces and user-journey-finder consumes.
@@ -7,21 +7,21 @@ import { z } from "zod"
  * by an LLM reading source code rather than written by a human.
  */
 
-export const StepKind = z.enum(["page", "api", "service", "db", "queue", "external", "infra"])
-export type StepKind = z.infer<typeof StepKind>
+export const StepKind = z.enum(["page", "api", "service", "db", "queue", "external", "infra"]);
+export type StepKind = z.infer<typeof StepKind>;
 
-export const Confidence = z.enum(["low", "medium", "high"])
-export type Confidence = z.infer<typeof Confidence>
+export const Confidence = z.enum(["low", "medium", "high"]);
+export type Confidence = z.infer<typeof Confidence>;
 
-export const Transport = z.enum(["http", "https", "grpc", "event", "sql", "websocket"])
-export type Transport = z.infer<typeof Transport>
+export const Transport = z.enum(["http", "https", "grpc", "event", "sql", "websocket"]);
+export type Transport = z.infer<typeof Transport>;
 
 export const SourceRef = z.object({
   file: z.string(),
   startLine: z.number().int().positive(),
   endLine: z.number().int().positive(),
-})
-export type SourceRef = z.infer<typeof SourceRef>
+});
+export type SourceRef = z.infer<typeof SourceRef>;
 
 export const Step = z.object({
   id: z.string(),
@@ -37,8 +37,8 @@ export const Step = z.object({
   tables: z.array(z.string()).optional().nullable(),
   vendor: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
-})
-export type Step = z.infer<typeof Step>
+});
+export type Step = z.infer<typeof Step>;
 
 export const Edge = z.object({
   from: z.string(),
@@ -46,8 +46,8 @@ export const Edge = z.object({
   label: z.string(),
   transport: Transport,
   confidence: Confidence,
-})
-export type Edge = z.infer<typeof Edge>
+});
+export type Edge = z.infer<typeof Edge>;
 
 export const Journey = z.object({
   id: z.string(),
@@ -58,8 +58,8 @@ export const Journey = z.object({
   tags: z.array(z.string()),
   steps: z.array(Step),
   edges: z.array(Edge),
-})
-export type Journey = z.infer<typeof Journey>
+});
+export type Journey = z.infer<typeof Journey>;
 
 /** Lightweight per-journey summary kept in the index file. */
 export const JourneySummary = z.object({
@@ -72,23 +72,23 @@ export const JourneySummary = z.object({
   stepCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
   file: z.string(),
-})
-export type JourneySummary = z.infer<typeof JourneySummary>
+});
+export type JourneySummary = z.infer<typeof JourneySummary>;
 
 export const ScanMeta = z.object({
   generatedAt: z.string(),
   scannerVersion: z.string(),
   provider: z.string(),
   reposScanned: z.array(z.string()),
-})
-export type ScanMeta = z.infer<typeof ScanMeta>
+});
+export type ScanMeta = z.infer<typeof ScanMeta>;
 
 /** output/index.json */
 export const ScanIndex = z.object({
   meta: ScanMeta,
   journeys: z.array(JourneySummary),
-})
-export type ScanIndex = z.infer<typeof ScanIndex>
+});
+export type ScanIndex = z.infer<typeof ScanIndex>;
 
 /**
  * Intermediate, per-repo artifact produced by a surveyor agent. Not consumed
@@ -114,8 +114,8 @@ export const RepoManifest = z.object({
       confidence: Confidence,
     }),
   ),
-})
-export type RepoManifest = z.infer<typeof RepoManifest>
+});
+export type RepoManifest = z.infer<typeof RepoManifest>;
 
 // ---------------------------------------------------------------------------
 // Lenient variants for parsing raw model output.
@@ -136,92 +136,162 @@ export type RepoManifest = z.infer<typeof RepoManifest>
 /** Accepts a JSON array, a comma/newline/semicolon-separated string, or a bare scalar where a string list is expected. */
 function looseStringList<T extends z.ZodType>(inner: T) {
   return z.preprocess((value) => {
-    if (value == null) return value
-    if (Array.isArray(value)) return value.filter((item) => item != null).map(String)
+    if (value == null) return value;
+    if (Array.isArray(value)) return value.filter((item) => item != null).map(String);
     if (typeof value === "string") {
       return value
         .split(/[,\n;]/)
         .map((item) => item.trim())
-        .filter((item) => item.length > 0)
+        .filter((item) => item.length > 0);
     }
-    return [String(value)]
-  }, inner)
+    return [String(value)];
+  }, inner);
 }
 
 /** A list that may be omitted or null entirely (-> []), or given as a single object instead of an array. */
 function looseArray<T extends z.ZodType>(item: T) {
   return z.preprocess((value) => {
-    if (value == null) return []
-    return Array.isArray(value) ? value : [value]
-  }, z.array(item))
+    if (value == null) return [];
+    return Array.isArray(value) ? value : [value];
+  }, z.array(item));
 }
 
 /** A string that models sometimes emit as a number or a one-element array. */
 const looseScalar = (value: unknown) => {
-  if (value == null || typeof value === "string") return value
-  if (Array.isArray(value)) return value.map(String).join(", ")
-  if (typeof value === "number" || typeof value === "boolean") return String(value)
-  return value
-}
-const looseString = z.preprocess(looseScalar, z.string())
-const looseOptionalString = z.preprocess(looseScalar, z.string().optional().nullable())
+  if (value == null || typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(String).join(", ");
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return value;
+};
+const looseString = z.preprocess(looseScalar, z.string());
+const looseOptionalString = z.preprocess(looseScalar, z.string().optional().nullable());
 
 /** Case-insensitive enum with synonyms; `fallback` (if given) replaces any value that still doesn't match. */
-function looseEnum<T extends z.ZodType>(schema: T, synonyms: Record<string, string>, fallback?: string) {
-  const allowed = new Set(Object.values(synonyms))
+function looseEnum<T extends z.ZodType>(
+  schema: T,
+  synonyms: Record<string, string>,
+  fallback?: string,
+) {
+  const allowed = new Set(Object.values(synonyms));
   return z.preprocess((value) => {
-    if (typeof value !== "string") return value
-    const normalised = value.trim().toLowerCase().replace(/[\s_-]+/g, "")
-    const mapped = synonyms[normalised] ?? normalised
-    if (fallback !== undefined && !allowed.has(mapped) && !schema.safeParse(mapped).success) return fallback
-    return mapped
-  }, schema)
+    if (typeof value !== "string") return value;
+    const normalised = value
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "");
+    const mapped = synonyms[normalised] ?? normalised;
+    if (fallback !== undefined && !allowed.has(mapped) && !schema.safeParse(mapped).success)
+      return fallback;
+    return mapped;
+  }, schema);
 }
 
 const LooseStepKind = looseEnum(StepKind, {
-  endpoint: "api", route: "api", controller: "api", handler: "api", rest: "api", graphql: "api", cron: "api",
-  usecase: "service", saga: "service", worker: "service", job: "service", internal: "service",
-  database: "db", datastore: "db", table: "db", store: "db", cache: "db",
-  topic: "queue", event: "queue", events: "queue", consumer: "queue", publisher: "queue", stream: "queue",
-  vendor: "external", thirdparty: "external", integration: "external",
-  ui: "page", screen: "page", view: "page", component: "page", frontend: "page",
-  terraform: "infra", iac: "infra", infrastructure: "infra", script: "infra", deployment: "infra",
-})
+  endpoint: "api",
+  route: "api",
+  controller: "api",
+  handler: "api",
+  rest: "api",
+  graphql: "api",
+  cron: "api",
+  usecase: "service",
+  saga: "service",
+  worker: "service",
+  job: "service",
+  internal: "service",
+  database: "db",
+  datastore: "db",
+  table: "db",
+  store: "db",
+  cache: "db",
+  topic: "queue",
+  event: "queue",
+  events: "queue",
+  consumer: "queue",
+  publisher: "queue",
+  stream: "queue",
+  vendor: "external",
+  thirdparty: "external",
+  integration: "external",
+  ui: "page",
+  screen: "page",
+  view: "page",
+  component: "page",
+  frontend: "page",
+  terraform: "infra",
+  iac: "infra",
+  infrastructure: "infra",
+  script: "infra",
+  deployment: "infra",
+});
 
 const LooseConfidence = looseEnum(
   Confidence,
-  { veryhigh: "high", certain: "high", med: "medium", moderate: "medium", verylow: "low", uncertain: "low" },
+  {
+    veryhigh: "high",
+    certain: "high",
+    med: "medium",
+    moderate: "medium",
+    verylow: "low",
+    uncertain: "low",
+  },
   // Whatever the model meant by a value we can't read, we shouldn't be *more* sure of it.
   "low",
-)
+);
 
 const LooseTransport = looseEnum(Transport, {
-  rest: "http", api: "http", fetch: "http", axios: "http", webhook: "http",
-  kafka: "event", sns: "event", sqs: "event", pubsub: "event", queue: "event", events: "event", topic: "event",
-  eventbridge: "event", rabbitmq: "event", amqp: "event", message: "event",
-  postgres: "sql", postgresql: "sql", mysql: "sql", db: "sql", database: "sql", query: "sql", jdbc: "sql",
-  ws: "websocket", wss: "websocket", socket: "websocket", socketio: "websocket",
-  grpcs: "grpc", protobuf: "grpc",
-})
+  rest: "http",
+  api: "http",
+  fetch: "http",
+  axios: "http",
+  webhook: "http",
+  kafka: "event",
+  sns: "event",
+  sqs: "event",
+  pubsub: "event",
+  queue: "event",
+  events: "event",
+  topic: "event",
+  eventbridge: "event",
+  rabbitmq: "event",
+  amqp: "event",
+  message: "event",
+  postgres: "sql",
+  postgresql: "sql",
+  mysql: "sql",
+  db: "sql",
+  database: "sql",
+  query: "sql",
+  jdbc: "sql",
+  ws: "websocket",
+  wss: "websocket",
+  socket: "websocket",
+  socketio: "websocket",
+  grpcs: "grpc",
+  protobuf: "grpc",
+});
 
 /** Accepts "12" as well as 12; rounds to an int and clamps to the 1-based line range the strict schema wants. */
 const looseLine = z.preprocess((value) => {
-  const n = typeof value === "string" ? Number(value.trim()) : value
-  return typeof n === "number" && Number.isFinite(n) ? Math.max(1, Math.round(n)) : n
-}, z.number().int().positive())
+  const n = typeof value === "string" ? Number(value.trim()) : value;
+  return typeof n === "number" && Number.isFinite(n) ? Math.max(1, Math.round(n)) : n;
+}, z.number().int().positive());
 
 /** A source ref that can't be read (no file, no lines) becomes null -- the step keeps its own `file` field for provenance. */
-const LooseSourceRef = z.preprocess((value) => {
-  if (value == null || typeof value !== "object" || Array.isArray(value)) return null
-  const ref = { ...(value as Record<string, unknown>) }
-  if (ref.startLine == null && ref.line != null) ref.startLine = ref.line
-  if (ref.endLine == null) ref.endLine = ref.startLine
-  if (typeof ref.file !== "string" || ref.startLine == null) return null
-  const start = Number(ref.startLine)
-  const end = Number(ref.endLine)
-  if (Number.isFinite(start) && Number.isFinite(end) && end < start) ref.endLine = ref.startLine
-  return ref
-}, SourceRef.extend({ startLine: looseLine, endLine: looseLine }).optional().nullable())
+const LooseSourceRef = z.preprocess(
+  (value) => {
+    if (value == null || typeof value !== "object" || Array.isArray(value)) return null;
+    const ref = { ...(value as Record<string, unknown>) };
+    if (ref.startLine == null && ref.line != null) ref.startLine = ref.line;
+    if (ref.endLine == null) ref.endLine = ref.startLine;
+    if (typeof ref.file !== "string" || ref.startLine == null) return null;
+    const start = Number(ref.startLine);
+    const end = Number(ref.endLine);
+    if (Number.isFinite(start) && Number.isFinite(end) && end < start) ref.endLine = ref.startLine;
+    return ref;
+  },
+  SourceRef.extend({ startLine: looseLine, endLine: looseLine }).optional().nullable(),
+);
 
 export const LooseStep = z.object({
   id: looseString,
@@ -237,7 +307,7 @@ export const LooseStep = z.object({
   tables: looseStringList(z.array(z.string()).optional().nullable()),
   vendor: looseOptionalString,
   notes: looseOptionalString,
-})
+});
 
 export const LooseEdge = z.object({
   from: looseString,
@@ -245,7 +315,7 @@ export const LooseEdge = z.object({
   label: looseString,
   transport: LooseTransport,
   confidence: LooseConfidence,
-})
+});
 
 export const LooseUnresolvedCall = z.object({
   fromStepId: looseString,
@@ -253,7 +323,7 @@ export const LooseUnresolvedCall = z.object({
   transport: LooseTransport,
   target: looseString,
   confidence: LooseConfidence,
-})
+});
 
 export const LooseJourney = z.object({
   id: looseString,
@@ -264,8 +334,8 @@ export const LooseJourney = z.object({
   tags: looseStringList(z.array(z.string()).optional().nullable()).transform((tags) => tags ?? []),
   steps: z.array(LooseStep),
   edges: looseArray(LooseEdge),
-})
+});
 
 /** `unresolvedCalls` / `remainingUnresolvedCalls` / `edges` lists a model may leave out entirely when it has none. */
-export const LooseUnresolvedCalls = looseArray(LooseUnresolvedCall)
-export const LooseEdges = looseArray(LooseEdge)
+export const LooseUnresolvedCalls = looseArray(LooseUnresolvedCall);
+export const LooseEdges = looseArray(LooseEdge);

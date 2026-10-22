@@ -1,24 +1,24 @@
-import { Annotation, END, Send, START, StateGraph } from "@langchain/langgraph"
-import { correlateJourneys } from "./agents/correlator.js"
-import { resolveRepoCalls } from "./agents/resolver.js"
-import { surveyRepo } from "./agents/surveyor.js"
-import { DEFAULT_CACHE_DIR, hashRepoFiles, readRepoCache, writeRepoCache } from "./cache/index.js"
-import { resolveModel, type ProviderId } from "./providers/index.js"
-import { loadRepoSnapshot, type RepoInput } from "./repo-intake/index.js"
-import type { Edge, Journey, RepoManifest } from "./types/journey.js"
-import type { StepUsage } from "./usage.js"
+import { Annotation, END, Send, START, StateGraph } from "@langchain/langgraph";
+import { correlateJourneys } from "./agents/correlator.js";
+import { resolveRepoCalls } from "./agents/resolver.js";
+import { surveyRepo } from "./agents/surveyor.js";
+import { DEFAULT_CACHE_DIR, hashRepoFiles, readRepoCache, writeRepoCache } from "./cache/index.js";
+import { resolveModel, type ProviderId } from "./providers/index.js";
+import { loadRepoSnapshot, type RepoInput } from "./repo-intake/index.js";
+import type { Edge, Journey, RepoManifest } from "./types/journey.js";
+import type { StepUsage } from "./usage.js";
 
 // Local/networked models (Ollama, LM Studio, ...) can take far longer per
 // call than a hosted API -- a large repo's survey prompt on a slow or
 // contended local server can genuinely take tens of minutes. This is well
 // above the OpenAI SDK's own default (10 min), which is what surfaces as
 // "Request timed out" against a local endpoint under load.
-const DEFAULT_TIMEOUT_MS = 20 * 60_000
+const DEFAULT_TIMEOUT_MS = 20 * 60_000;
 
 // Cap on how many resolve rounds the repo agents get to exchange edges
 // before we hand off to the correlator regardless -- bounds worst-case LLM
 // call volume (repos x rounds) against repos whose calls never resolve.
-const DEFAULT_MAX_ROUNDS = 4
+const DEFAULT_MAX_ROUNDS = 4;
 
 /**
  * The scan pipeline as a LangGraph graph:
@@ -29,6 +29,13 @@ const DEFAULT_MAX_ROUNDS = 4
  *    itself). Skipped entirely (no LLM call) for a repo whose file content
  *    hash matches its cache entry from a previous run with the same
  *    provider/model -- see src/cache/index.ts.
+ *    Every step id is namespaced as "<repo>/<id>" on the way into state --
+ *    surveys name steps independently, so "api-health" otherwise shows up in
+ *    several repos and an edge pointing at it is ambiguous.
+ *    "afterSurveys" is a plain join: a Send branch's own conditional edge only
+ *    sees the branch's OWN writes (LangGraph evaluates it per task), so the
+ *    first resolve round can only be dispatched from a node that runs after
+ *    every survey's manifest has been merged into state.
  * 2. "resolve": once every survey finishes, one node instance per repo
  *    (again via Send) is given every OTHER repo's manifest and tries to
  *    match its own unresolvedCalls to a step elsewhere, proposing Edges.
@@ -107,73 +114,148 @@ const ScanState = Annotation.Root({
     default: () => [],
   }),
   journeys: Annotation<Journey[]>,
-})
+});
+
+/**
+ * Namespaces a manifest's step ids as "<repo>/<id>" (idempotent). Surveys run
+ * independently and freely reuse ids like "api-health" or "infra-dockerfile",
+ * so without this an Edge's "to" can't say which repo's step it means.
+ */
+function qualifyStepIds(manifest: RepoManifest): RepoManifest {
+  const prefix = `${manifest.repo}/`;
+  const qualify = (id: string) => (id.startsWith(prefix) ? id : prefix + id);
+  return {
+    ...manifest,
+    steps: manifest.steps.map((step) => ({ ...step, id: qualify(step.id) })),
+    unresolvedCalls: manifest.unresolvedCalls.map((call) => ({
+      ...call,
+      fromStepId: qualify(call.fromStepId),
+    })),
+  };
+}
 
 async function surveyNode(state: typeof ScanState.State) {
   // Send() scopes repoInputs down to a single repo for this branch -- see dispatchSurveys.
-  const [repo] = state.repoInputs
-  const snapshot = await loadRepoSnapshot(repo)
-  const { skipped, truncated } = snapshot
+  const [repo] = state.repoInputs;
+  const snapshot = await loadRepoSnapshot(repo);
+  const { skipped, truncated } = snapshot;
   console.log(
     `  ${repo.name}: ${snapshot.files.length} file(s) loaded` +
       ` (skipped ${skipped.asset} media, ${skipped.sensitive} sensitive, ${skipped.lockfile} lockfile, ${skipped.testOrMock} test/mock, ${skipped.tooLarge} too large, ${skipped.unreadable} unreadable)` +
       (truncated ? " -- hit MAX_FILES_PER_REPO cap, some eligible files were NOT scanned" : ""),
-  )
+  );
 
-  const fileHash = hashRepoFiles(snapshot.files)
+  const fileHash = hashRepoFiles(snapshot.files);
   if (!state.noCache) {
-    const cached = await readRepoCache(state.cacheDir, repo.name, fileHash, state.providerId, state.modelId)
+    const cached = await readRepoCache(
+      state.cacheDir,
+      repo.name,
+      fileHash,
+      state.providerId,
+      state.modelId,
+    );
     if (cached) {
-      console.log(`  ${repo.name}: unchanged since last scan -- reusing cached manifest, no LLM call`)
-      return { manifests: { [repo.name]: cached } }
+      console.log(
+        `  ${repo.name}: unchanged since last scan -- reusing cached manifest, no LLM call`,
+      );
+      return { manifests: { [repo.name]: qualifyStepIds(cached) } };
     }
   }
 
-  const { model } = await resolveModel(state.providerId, state.modelId, { baseUrl: state.baseUrl })
-  const { manifest, usage } = await surveyRepo(model, state.providerId, state.modelId, snapshot, state.timeoutMs)
+  const { model } = await resolveModel(state.providerId, state.modelId, {
+    baseUrl: state.baseUrl,
+    timeoutMs: state.timeoutMs,
+  });
+  const { manifest, usage } = await surveyRepo(
+    model,
+    state.providerId,
+    state.modelId,
+    snapshot,
+    state.timeoutMs,
+  );
   if (!state.noCache) {
-    await writeRepoCache(state.cacheDir, repo.name, fileHash, state.providerId, state.modelId, manifest)
+    await writeRepoCache(
+      state.cacheDir,
+      repo.name,
+      fileHash,
+      state.providerId,
+      state.modelId,
+      manifest,
+    );
   }
-  return { manifests: { [repo.name]: manifest }, usage: [usage] }
+  return { manifests: { [repo.name]: qualifyStepIds(manifest) }, usage: [usage] };
+}
+
+async function afterSurveysNode(state: typeof ScanState.State) {
+  const manifests = Object.values(state.manifests);
+  const steps = manifests.reduce((n, m) => n + m.steps.length, 0);
+  const calls = manifests.reduce((n, m) => n + m.unresolvedCalls.length, 0);
+  console.log(
+    `  all ${manifests.length} survey(s) complete: ${steps} step(s), ${calls} unresolved call(s) to match across repos`,
+  );
+  return {};
 }
 
 async function resolveNode(state: typeof ScanState.State) {
   // Send() scopes repoName + a snapshot of manifests/edges as of round start -- see buildResolveSends.
-  const repoName = state.repoName!
-  const manifest = state.manifests[repoName]
+  const repoName = state.repoName!;
+  const manifest = state.manifests[repoName];
   if (!manifest || manifest.unresolvedCalls.length === 0) {
     // Nothing left to resolve for this repo -- skip the LLM call entirely.
-    return {}
+    return {};
   }
 
-  const others = Object.values(state.manifests).filter((m) => m.repo !== repoName)
-  const { model } = await resolveModel(state.providerId, state.modelId, { baseUrl: state.baseUrl })
-  const { edges, remainingUnresolvedCalls, usage } = await resolveRepoCalls(
-    model,
-    state.providerId,
-    state.modelId,
-    manifest,
-    others,
-    state.edges,
-    state.timeoutMs,
-  )
+  const others = Object.values(state.manifests).filter((m) => m.repo !== repoName);
+  const { model } = await resolveModel(state.providerId, state.modelId, {
+    baseUrl: state.baseUrl,
+    timeoutMs: state.timeoutMs,
+  });
+  let resolved: Awaited<ReturnType<typeof resolveRepoCalls>>;
+  try {
+    resolved = await resolveRepoCalls(
+      model,
+      state.providerId,
+      state.modelId,
+      manifest,
+      others,
+      state.edges,
+      state.timeoutMs,
+    );
+  } catch (err) {
+    // A resolve round is best-effort matching on top of surveys that already
+    // succeeded (and are cached). One repo's call timing out or coming back
+    // malformed shouldn't throw away the whole scan: its calls simply stay
+    // unresolved for this round -- it gets another go next round if the
+    // others made progress, and the correlator sees them either way.
+    console.warn(
+      `  resolve ${repoName}: FAILED, leaving its ${manifest.unresolvedCalls.length} call(s) unresolved this round -- ` +
+        (err instanceof Error ? err.message : String(err)),
+    );
+    return {};
+  }
+  const { edges, remainingUnresolvedCalls, usage } = resolved;
   console.log(
     `  resolve ${repoName}: ${edges.length} edge(s) matched, ${remainingUnresolvedCalls.length} call(s) still unresolved`,
-  )
+  );
   return {
     manifests: { [repoName]: { ...manifest, unresolvedCalls: remainingUnresolvedCalls } },
     edges,
     usage: [usage],
-  }
+  };
 }
 
 async function afterResolveRoundNode(state: typeof ScanState.State) {
-  console.log(`  resolve round ${state.round + 1} complete: ${state.edges.length} edge(s) confirmed so far`)
-  return { round: state.round + 1, previousEdgeTotal: state.edges.length }
+  console.log(
+    `  resolve round ${state.round + 1} complete: ${state.edges.length} edge(s) confirmed so far`,
+  );
+  return { round: state.round + 1, previousEdgeTotal: state.edges.length };
 }
 
 async function correlateNode(state: typeof ScanState.State) {
-  const { model } = await resolveModel(state.providerId, state.modelId, { baseUrl: state.baseUrl })
+  const { model } = await resolveModel(state.providerId, state.modelId, {
+    baseUrl: state.baseUrl,
+    timeoutMs: state.timeoutMs,
+  });
   const { journeys, usage } = await correlateJourneys(
     model,
     state.providerId,
@@ -181,8 +263,8 @@ async function correlateNode(state: typeof ScanState.State) {
     Object.values(state.manifests),
     state.edges,
     state.timeoutMs,
-  )
-  return { journeys, usage: [usage] }
+  );
+  return { journeys, usage: [usage] };
 }
 
 function dispatchSurveys(state: typeof ScanState.State) {
@@ -197,7 +279,7 @@ function dispatchSurveys(state: typeof ScanState.State) {
         cacheDir: state.cacheDir,
         noCache: state.noCache,
       }),
-  )
+  );
 }
 
 /** One Send per repo, giving each repo's resolve branch a snapshot of every manifest + edge so far. */
@@ -213,39 +295,41 @@ function buildResolveSends(state: typeof ScanState.State) {
         baseUrl: state.baseUrl,
         timeoutMs: state.timeoutMs,
       }),
-  )
+  );
 }
 
 function dispatchFirstResolveRound(state: typeof ScanState.State) {
-  return buildResolveSends(state)
+  return buildResolveSends(state);
 }
 
 /** Loops back into another resolve round if the last one made progress and we're under the cap; otherwise done. */
 function routeAfterResolve(state: typeof ScanState.State): "correlate" | Send[] {
-  const madeProgress = state.edges.length > state.previousEdgeTotal
-  const hasRoundsLeft = state.round < state.maxRounds
+  const madeProgress = state.edges.length > state.previousEdgeTotal;
+  const hasRoundsLeft = state.round < state.maxRounds;
   if (madeProgress && hasRoundsLeft) {
-    return buildResolveSends(state)
+    return buildResolveSends(state);
   }
-  return "correlate"
+  return "correlate";
 }
 
 export function buildScanGraph() {
   const graph = new StateGraph(ScanState)
     .addNode("survey", surveyNode)
+    .addNode("afterSurveys", afterSurveysNode)
     .addNode("resolve", resolveNode)
     .addNode("afterResolveRound", afterResolveRoundNode)
     .addNode("correlate", correlateNode)
     .addConditionalEdges(START, dispatchSurveys, ["survey"])
-    .addConditionalEdges("survey", dispatchFirstResolveRound, ["resolve"])
+    .addEdge("survey", "afterSurveys")
+    .addConditionalEdges("afterSurveys", dispatchFirstResolveRound, ["resolve"])
     .addEdge("resolve", "afterResolveRound")
     .addConditionalEdges("afterResolveRound", routeAfterResolve, ["resolve", "correlate"])
     .addEdge("correlate", END)
-    .compile()
-  graph.name = "TrizoHorus"
-  return graph
+    .compile();
+  graph.name = "TrizoHorus";
+  return graph;
 }
 
 // Referenced by langgraph.json ("./src/graph.ts:graph") so `langgraphjs dev`
 // can load a compiled graph without any CLI-specific setup.
-export const graph = buildScanGraph()
+export const graph = buildScanGraph();

@@ -1,11 +1,11 @@
-import { extractPatternFacts, POWERSHELL_RULES } from "./patterns.js"
-import { extractTreeSitterFacts, type TreeSitterLanguageName } from "./tree-sitter.js"
-import { extractTypeScriptFacts } from "./typescript.js"
-import type { CodeFact } from "./types.js"
+import { extractPatternFacts, POWERSHELL_RULES } from "./patterns.js";
+import { extractTreeSitterFacts, type TreeSitterLanguageName } from "./tree-sitter.js";
+import { extractTypeScriptFacts } from "./typescript.js";
+import type { CodeFact } from "./types.js";
 
-export type { CodeFact, FactKind } from "./types.js"
+export type { CodeFact, FactKind } from "./types.js";
 
-const TS_JS_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"])
+const TS_JS_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 
 const TREE_SITTER_EXTENSIONS: Record<string, TreeSitterLanguageName> = {
   ".php": "php",
@@ -15,7 +15,7 @@ const TREE_SITTER_EXTENSIONS: Record<string, TreeSitterLanguageName> = {
   ".bash": "bash",
   ".tf": "terraform",
   ".tf.json": "terraform",
-}
+};
 
 /**
  * Extracts deterministic CodeFacts for one file, dispatched by extension.
@@ -31,25 +31,27 @@ const TREE_SITTER_EXTENSIONS: Record<string, TreeSitterLanguageName> = {
  * on top.
  */
 export async function extractFacts(filePath: string, content: string): Promise<CodeFact[]> {
-  const ext = extensionOf(filePath)
+  const ext = extensionOf(filePath);
 
   try {
-    if (TS_JS_EXTENSIONS.has(ext)) return extractTypeScriptFacts(filePath, content)
-    const treeSitterLanguage = TREE_SITTER_EXTENSIONS[ext]
-    if (treeSitterLanguage) return await extractTreeSitterFacts(treeSitterLanguage, filePath, content)
-    if (ext === ".ps1" || ext === ".psm1") return extractPatternFacts(filePath, content, POWERSHELL_RULES)
+    if (TS_JS_EXTENSIONS.has(ext)) return extractTypeScriptFacts(filePath, content);
+    const treeSitterLanguage = TREE_SITTER_EXTENSIONS[ext];
+    if (treeSitterLanguage)
+      return await extractTreeSitterFacts(treeSitterLanguage, filePath, content);
+    if (ext === ".ps1" || ext === ".psm1")
+      return extractPatternFacts(filePath, content, POWERSHELL_RULES);
   } catch {
     // Extraction is a best-effort hint for the surveyor, never a reason to fail the scan.
-    return []
+    return [];
   }
 
-  return []
+  return [];
 }
 
 function extensionOf(filePath: string): string {
-  const dot = filePath.lastIndexOf(".")
-  if (dot === -1) return ""
+  const dot = filePath.lastIndexOf(".");
+  if (dot === -1) return "";
   // Handle the two-part ".tf.json" convention explicitly before falling back to the last extension.
-  if (filePath.toLowerCase().endsWith(".tf.json")) return ".tf.json"
-  return filePath.slice(dot).toLowerCase()
+  if (filePath.toLowerCase().endsWith(".tf.json")) return ".tf.json";
+  return filePath.slice(dot).toLowerCase();
 }

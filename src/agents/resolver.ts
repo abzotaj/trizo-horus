@@ -1,10 +1,11 @@
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
-import { HumanMessage, SystemMessage } from "@langchain/core/messages"
-import { z } from "zod"
-import type { ProviderId } from "../providers/index.js"
-import { Edge, LooseEdges, LooseUnresolvedCalls, RepoManifest } from "../types/journey.js"
-import { recordUsage, type StepUsage } from "../usage.js"
-import { invokeStructured } from "./structured.js"
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { z } from "zod";
+import type { ProviderId } from "../providers/index.js";
+import { Edge, LooseEdges, LooseUnresolvedCalls, RepoManifest } from "../types/journey.js";
+import { recordUsage, type StepUsage } from "../usage.js";
+import { condenseSteps } from "./condense.js";
+import { invokeStructured } from "./structured.js";
 
 const SYSTEM_PROMPT = `You are one repo's agent in a multi-round exchange between repo agents that are jointly
 mapping cross-repo user journeys. Every repo has already been surveyed independently, so every
@@ -14,7 +15,7 @@ outbound calls to the step elsewhere that actually receives them.
 You are given:
 1. Your own repo's remaining "unresolvedCalls" -- outbound calls (HTTP requests, event publishes,
    gRPC calls) your repo makes but doesn't itself handle.
-2. Every OTHER repo's manifest (their steps only).
+2. Every OTHER repo's steps (id, kind, label, endpoint/datastore/vendor).
 3. Edges already confirmed by any repo's agent in earlier rounds of this exchange, for context --
    e.g. to help break a tie between two similarly-named candidate targets.
 
@@ -26,7 +27,7 @@ the other repos' manifests (by endpoint/topic/method name, or clear semantic equ
   resolves it, or it may simply never resolve.
 
 Only propose edges you're reasonably confident about; never invent a destination that isn't
-actually present in the other repos' steps.`
+actually present in the other repos' steps.`;
 
 export async function resolveRepoCalls(
   model: BaseChatModel,
@@ -36,7 +37,11 @@ export async function resolveRepoCalls(
   otherManifests: RepoManifest[],
   confirmedEdges: Edge[],
   timeoutMs: number,
-): Promise<{ edges: Edge[]; remainingUnresolvedCalls: RepoManifest["unresolvedCalls"]; usage: StepUsage }> {
+): Promise<{
+  edges: Edge[];
+  remainingUnresolvedCalls: RepoManifest["unresolvedCalls"];
+  usage: StepUsage;
+}> {
   const { output, raws } = await invokeStructured({
     model,
     label: `resolve:${ownManifest.repo}`,
@@ -53,17 +58,17 @@ export async function resolveRepoCalls(
       new SystemMessage(SYSTEM_PROMPT),
       new HumanMessage(
         `Your repo: ${ownManifest.repo}\n\n` +
-          `Your unresolvedCalls:\n${JSON.stringify(ownManifest.unresolvedCalls, null, 2)}\n\n` +
+          `Your unresolvedCalls:\n${JSON.stringify(ownManifest.unresolvedCalls, null, 1)}\n\n` +
           `Other repos' steps:\n${JSON.stringify(
-            otherManifests.map((m) => ({ repo: m.repo, steps: m.steps })),
+            otherManifests.map((m) => ({ repo: m.repo, steps: condenseSteps(m) })),
             null,
-            2,
+            1,
           )}\n\n` +
-          `Edges already confirmed so far:\n${JSON.stringify(confirmedEdges, null, 2)}`,
+          `Edges already confirmed so far:\n${JSON.stringify(confirmedEdges, null, 1)}`,
       ),
     ],
-  })
+  });
 
-  const usage = recordUsage(`resolve:${ownManifest.repo}`, providerId, modelId, raws)
-  return { edges: output.edges, remainingUnresolvedCalls: output.remainingUnresolvedCalls, usage }
+  const usage = recordUsage(`resolve:${ownManifest.repo}`, providerId, modelId, raws);
+  return { edges: output.edges, remainingUnresolvedCalls: output.remainingUnresolvedCalls, usage };
 }

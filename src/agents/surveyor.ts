@@ -1,16 +1,16 @@
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
-import { HumanMessage, SystemMessage } from "@langchain/core/messages"
-import { z } from "zod"
-import type { ProviderId } from "../providers/index.js"
-import type { RepoSnapshot } from "../repo-intake/index.js"
-import { LooseStep, LooseUnresolvedCalls, RepoManifest } from "../types/journey.js"
-import { recordUsage, type StepUsage } from "../usage.js"
-import { invokeStructured } from "./structured.js"
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { z } from "zod";
+import type { ProviderId } from "../providers/index.js";
+import type { RepoSnapshot } from "../repo-intake/index.js";
+import { LooseStep, LooseUnresolvedCalls, RepoManifest } from "../types/journey.js";
+import { recordUsage, type StepUsage } from "../usage.js";
+import { invokeStructured } from "./structured.js";
 
 // Naive v1 cap on how much source text goes into a single prompt. Real
 // chunking (splitting a large repo across multiple surveyor calls and
 // merging the results) is a roadmap item -- see README.
-const MAX_PROMPT_CHARS = 300_000
+const MAX_PROMPT_CHARS = 300_000;
 
 const SYSTEM_PROMPT = `You are a code archaeologist. You are given the full text of every source file in a
 single repository -- application code as well as infrastructure-as-code (Terraform HCL) and
@@ -50,7 +50,7 @@ and don't limit yourself to the facts list: it is not exhaustive, and a real ste
 missed is still worth reporting from the file contents directly.
 
 Only report what the code actually supports. Do not invent steps for typical patterns you'd
-expect but didn't see.`
+expect but didn't see.`;
 
 export async function surveyRepo(
   model: BaseChatModel,
@@ -59,13 +59,21 @@ export async function surveyRepo(
   snapshot: RepoSnapshot,
   timeoutMs: number,
 ): Promise<{ manifest: RepoManifest; usage: StepUsage }> {
-  const fileList = snapshot.files.map((f) => f.path).join("\n")
+  const fileList = snapshot.files.map((f) => f.path).join("\n");
   const facts = snapshot.files.flatMap((f) =>
-    f.facts.map(({ file, startLine, endLine, kind, target }) => ({ file, startLine, endLine, kind, target })),
-  )
-  let body = snapshot.files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n")
+    f.facts.map(({ file, startLine, endLine, kind, target }) => ({
+      file,
+      startLine,
+      endLine,
+      kind,
+      target,
+    })),
+  );
+  let body = snapshot.files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n");
   if (body.length > MAX_PROMPT_CHARS) {
-    body = body.slice(0, MAX_PROMPT_CHARS) + "\n\n[... truncated, repo exceeds single-pass prompt budget ...]"
+    body =
+      body.slice(0, MAX_PROMPT_CHARS) +
+      "\n\n[... truncated, repo exceeds single-pass prompt budget ...]";
   }
 
   const { output, raws } = await invokeStructured({
@@ -98,9 +106,9 @@ export async function surveyRepo(
           `File contents:\n${body}`,
       ),
     ],
-  })
+  });
 
-  const manifest = RepoManifest.parse({ repo: snapshot.name, ...output })
-  const usage = recordUsage(`survey:${snapshot.name}`, providerId, modelId, raws)
-  return { manifest, usage }
+  const manifest = RepoManifest.parse({ repo: snapshot.name, ...output });
+  const usage = recordUsage(`survey:${snapshot.name}`, providerId, modelId, raws);
+  return { manifest, usage };
 }
